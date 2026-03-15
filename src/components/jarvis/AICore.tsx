@@ -1,122 +1,123 @@
-import { useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Sphere, MeshDistortMaterial } from "@react-three/drei";
-import * as THREE from "three";
+import { useRef, useEffect } from "react";
+import { motion } from "framer-motion";
 
-interface AICoreOrbProps {
+interface AICoreProps {
   isListening: boolean;
   isResponding: boolean;
 }
 
-function CoreOrb({ isListening, isResponding }: AICoreOrbProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const glowRef = useRef<THREE.Mesh>(null);
-  const ringRef = useRef<THREE.Mesh>(null);
+export default function AICore({ isListening, isResponding }: AICoreProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (meshRef.current) {
-      meshRef.current.rotation.y = t * 0.3;
-      meshRef.current.rotation.x = Math.sin(t * 0.2) * 0.1;
-      const baseScale = isListening ? 1.15 : isResponding ? 1.08 : 1;
-      const breathe = Math.sin(t * 1.5) * 0.03;
-      const s = baseScale + breathe;
-      meshRef.current.scale.set(s, s, s);
-    }
-    if (glowRef.current) {
-      const glowScale = 1.4 + Math.sin(t * 2) * 0.08;
-      glowRef.current.scale.set(glowScale, glowScale, glowScale);
-      (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.08 + Math.sin(t * 3) * 0.04 + (isResponding ? 0.06 : 0);
-    }
-    if (ringRef.current) {
-      ringRef.current.rotation.z = t * 0.5;
-      ringRef.current.rotation.x = Math.PI / 2 + Math.sin(t * 0.3) * 0.2;
-    }
-  });
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const size = 320;
+    canvas.width = size;
+    canvas.height = size;
+    const cx = size / 2;
+    const cy = size / 2;
+    let animId: number;
+    let time = 0;
+
+    const animate = () => {
+      time += 0.016;
+      ctx.clearRect(0, 0, size, size);
+
+      // Outer glow
+      const glowGrad = ctx.createRadialGradient(cx, cy, 60, cx, cy, 150);
+      glowGrad.addColorStop(0, `rgba(0, 136, 255, ${isResponding ? 0.15 : 0.08})`);
+      glowGrad.addColorStop(1, "transparent");
+      ctx.fillStyle = glowGrad;
+      ctx.fillRect(0, 0, size, size);
+
+      // Rings
+      const drawRing = (radius: number, opacity: number, speed: number) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(time * speed);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, radius, radius * 0.4, Math.sin(time * 0.3) * 0.3, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 170, 255, ${opacity})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+      };
+      drawRing(100, 0.4, 0.5);
+      drawRing(115, 0.25, -0.3);
+
+      // Main sphere
+      const baseRadius = 65;
+      const breathe = Math.sin(time * 1.5) * 3;
+      const scaleBonus = isListening ? 8 : isResponding ? 4 : 0;
+      const radius = baseRadius + breathe + scaleBonus;
+
+      const sphereGrad = ctx.createRadialGradient(cx - 15, cy - 15, 10, cx, cy, radius);
+      sphereGrad.addColorStop(0, "rgba(0, 200, 255, 0.9)");
+      sphereGrad.addColorStop(0.5, "rgba(0, 100, 204, 0.8)");
+      sphereGrad.addColorStop(1, "rgba(0, 50, 150, 0.3)");
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = sphereGrad;
+      ctx.shadowBlur = 40;
+      ctx.shadowColor = `rgba(0, 136, 255, ${isResponding ? 0.8 : 0.5})`;
+      ctx.fill();
+
+      // Inner core
+      const innerGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 30);
+      innerGrad.addColorStop(0, `rgba(0, 220, 255, ${0.6 + Math.sin(time * 3) * 0.2})`);
+      innerGrad.addColorStop(1, "transparent");
+      ctx.beginPath();
+      ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+      ctx.fillStyle = innerGrad;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = "rgba(0, 220, 255, 0.6)";
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Energy lines on sphere surface
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + time * 0.8;
+        const x1 = cx + Math.cos(angle) * radius * 0.6;
+        const y1 = cy + Math.sin(angle) * radius * 0.6;
+        const x2 = cx + Math.cos(angle + 0.5) * radius * 0.9;
+        const y2 = cy + Math.sin(angle + 0.5) * radius * 0.9;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = `rgba(0, 200, 255, ${0.2 + Math.sin(time * 2 + i) * 0.15})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      animId = requestAnimationFrame(animate);
+    };
+
+    animate();
+    return () => cancelAnimationFrame(animId);
+  }, [isListening, isResponding]);
 
   return (
-    <group>
-      {/* Outer glow */}
-      <Sphere ref={glowRef} args={[1.4, 32, 32]}>
-        <meshBasicMaterial
-          color="#0088ff"
-          transparent
-          opacity={0.08}
-          side={THREE.BackSide}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-        />
-      </Sphere>
-
-      {/* Main orb */}
-      <Sphere ref={meshRef} args={[1, 64, 64]}>
-        <MeshDistortMaterial
-          color="#0066cc"
-          emissive="#0099ff"
-          emissiveIntensity={isResponding ? 1.2 : 0.6}
-          roughness={0.2}
-          metalness={0.8}
-          distort={isListening ? 0.4 : 0.2}
-          speed={isListening ? 4 : 2}
-          transparent
-          opacity={0.9}
-        />
-      </Sphere>
-
-      {/* Inner core */}
-      <Sphere args={[0.5, 32, 32]}>
-        <meshBasicMaterial
-          color="#00ccff"
-          transparent
-          opacity={0.4}
-          blending={THREE.AdditiveBlending}
-        />
-      </Sphere>
-
-      {/* Ring */}
-      <mesh ref={ringRef}>
-        <torusGeometry args={[1.6, 0.02, 16, 100]} />
-        <meshBasicMaterial
-          color="#00aaff"
-          transparent
-          opacity={0.5}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-
-      {/* Second ring */}
-      <mesh rotation={[Math.PI / 3, 0, 0]}>
-        <torusGeometry args={[1.8, 0.015, 16, 100]} />
-        <meshBasicMaterial
-          color="#00ccff"
-          transparent
-          opacity={0.3}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-
-      <pointLight color="#0088ff" intensity={2} distance={10} />
-    </group>
-  );
-}
-
-export default function AICore({
-  isListening,
-  isResponding,
-}: AICoreOrbProps) {
-  return (
-    <div className="relative w-[320px] h-[320px] md:w-[400px] md:h-[400px]">
-      <Canvas camera={{ position: [0, 0, 5], fov: 45 }} gl={{ alpha: true }}>
-        <ambientLight intensity={0.3} />
-        <directionalLight position={[5, 5, 5]} intensity={0.5} />
-        <CoreOrb isListening={isListening} isResponding={isResponding} />
-      </Canvas>
+    <motion.div
+      className="relative"
+      animate={{ scale: isListening ? 1.05 : 1 }}
+      transition={{ type: "spring", stiffness: 200, damping: 20 }}
+    >
+      <canvas
+        ref={canvasRef}
+        className="w-[280px] h-[280px] md:w-[320px] md:h-[320px]"
+      />
       {/* CSS glow behind */}
       <div
         className="absolute inset-0 -z-10 rounded-full opacity-40 blur-3xl"
-        style={{ background: "radial-gradient(circle, hsl(200 100% 50% / 0.4), transparent 70%)" }}
+        style={{
+          background: "radial-gradient(circle, hsl(200 100% 50% / 0.4), transparent 70%)",
+        }}
       />
-    </div>
+    </motion.div>
   );
 }
