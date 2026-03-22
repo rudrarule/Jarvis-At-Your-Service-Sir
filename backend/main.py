@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
-from services import handle_chat
+from services import handle_chat, text_to_speech
 
 app = FastAPI(
     title="Holo Core Nexus API",
@@ -23,6 +24,10 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class TTSRequest(BaseModel):
+    text: str
+
+
 @app.get("/")
 async def root():
     return {"status": "online", "system": "J.A.R.V.I.S", "version": "0.1.0"}
@@ -30,10 +35,19 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "modules": {"neural_net": True, "voice": False, "automation": False}}
+    return {"status": "healthy", "modules": {"neural_net": True, "voice": True, "automation": False}}
 
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
     reply = await handle_chat(request.message)
     return {"reply": reply}
+
+
+@app.post("/tts")
+async def tts(request: TTSRequest):
+    """Convert text to speech using ElevenLabs. Returns MP3 audio."""
+    audio = await text_to_speech(request.text)
+    if audio is None:
+        return {"error": "ElevenLabs not configured. Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env"}
+    return Response(content=audio, media_type="audio/mpeg")

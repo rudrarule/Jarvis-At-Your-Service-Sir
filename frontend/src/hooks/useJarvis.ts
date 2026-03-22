@@ -10,7 +10,7 @@ const BACKEND_URL = "http://localhost:8000";
 
 /**
  * useJarvis — manages the full AI pipeline:
- *   speech recognition → backend calls → chat history → TTS
+ *   speech recognition → backend calls → chat history → TTS (ElevenLabs or browser)
  */
 export function useJarvis() {
   const [isListening, setIsListening] = useState(false);
@@ -21,8 +21,30 @@ export function useJarvis() {
   ]);
   const recognitionRef = useRef<any>(null);
 
-  /** Text-to-Speech: make J.A.R.V.I.S speak aloud */
-  const speak = useCallback((text: string) => {
+  /** Text-to-Speech: try ElevenLabs first, fall back to browser TTS */
+  const speak = useCallback(async (text: string) => {
+    try {
+      // Try ElevenLabs via backend
+      const res = await fetch(`${BACKEND_URL}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (res.ok && res.headers.get("content-type")?.includes("audio")) {
+        // ElevenLabs returned audio — play it
+        const audioBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.onended = () => URL.revokeObjectURL(audioUrl);
+        audio.play();
+        return;
+      }
+    } catch (err) {
+      console.warn("ElevenLabs TTS failed, using browser fallback:", err);
+    }
+
+    // Fallback: browser built-in TTS
     const speech = new SpeechSynthesisUtterance(text);
     speech.lang = "en-US";
     window.speechSynthesis.speak(speech);
@@ -53,7 +75,7 @@ export function useJarvis() {
           { id: Date.now() + 1, text: reply, sender: "jarvis" },
         ]);
 
-        // Speak the reply aloud
+        // Speak the reply aloud (ElevenLabs or browser fallback)
         speak(reply);
       } catch (err) {
         console.error("Failed to reach J.A.R.V.I.S backend:", err);
