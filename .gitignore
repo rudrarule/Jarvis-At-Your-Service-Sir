@@ -29,3 +29,6 @@ dist-ssr
 **/venv/
 **/__pycache__/
 *.pyc
+
+# ChromaDB local data
+**/chroma_data/

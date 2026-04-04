@@ -1,18 +1,19 @@
 """
 services.py — LLM Logic & Tool Dispatcher
 Handles communication with Gemini (primary), OpenAI (fallback), Ollama (local),
-and ElevenLabs for text-to-speech.
+ElevenLabs for text-to-speech, and the memory system.
 """
 import os
 import httpx
 from dotenv import load_dotenv
 import google.generativeai as genai
 from openai import AsyncOpenAI
+from memory import extract_memory, get_memory_context
 
 load_dotenv(override=True)
 
 # ── System Prompt ──────────────────────────────────────────
-JARVIS_SYSTEM_PROMPT = """You are J.A.R.V.I.S (Just A Rather Very Intelligent System), 
+JARVIS_BASE_PROMPT = """You are J.A.R.V.I.S (Just A Rather Very Intelligent System), 
 an advanced AI assistant inspired by Tony Stark's AI from Iron Man.
 
 Your personality:
@@ -22,17 +23,29 @@ Your personality:
 - You have a dry sense of humor
 - You are always ready to assist
 
-Keep responses short and conversational (2-3 sentences max) since they will be spoken aloud via text-to-speech."""
+Keep responses short and conversational (3-5 sentences max) since they will be spoken aloud via text-to-speech."""
+
+
+def _build_system_prompt() -> str:
+    """Build the full system prompt with memory context injected."""
+    memory_ctx = get_memory_context()
+    if memory_ctx:
+        return (
+            f"{JARVIS_BASE_PROMPT}\n\n"
+            f"--- User Memory ---\n"
+            f"You remember the following about this user. Use this naturally in your responses:\n"
+            f"{memory_ctx}\n"
+            f"--- End Memory ---"
+        )
+    return JARVIS_BASE_PROMPT
 
 # ── Configure Gemini (Primary) ────────────────────────────
 gemini_key = os.getenv("GEMINI_API_KEY")
 gemini_model = None
 if gemini_key:
     genai.configure(api_key=gemini_key)
-    gemini_model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=JARVIS_SYSTEM_PROMPT,
-    )
+    # NOTE: Gemini model re-created per call to inject fresh memory context
+    pass
 
 # ── Configure OpenAI (Fallback) ───────────────────────────
 openai_key = os.getenv("OPENAI_API_KEY")
@@ -51,10 +64,14 @@ ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 # ── LLM Calls ─────────────────────────────────────────────
 
 async def _call_gemini(message: str) -> str:
-    """Try Gemini first."""
-    if not gemini_model:
+    """Try Gemini first — rebuilds model each call to inject latest memory."""
+    if not gemini_key:
         raise RuntimeError("Gemini API key not configured.")
-    response = await gemini_model.generate_content_async(message)
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash",
+        system_instruction=_build_system_prompt(),
+    )
+    response = await model.generate_content_async(message)
     return response.text
 
 
@@ -66,7 +83,7 @@ async def _call_openai(message: str) -> str:
     response = await openai_client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
+            {"role": "system", "content": _build_system_prompt()},
             {"role": "user", "content": message},
         ],
         max_tokens=200,
@@ -82,7 +99,7 @@ async def _call_ollama(message: str) -> str:
             json={
                 "model": OLLAMA_MODEL,
                 "messages": [
-                    {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
+                    {"role": "system", "content": _build_system_prompt()},
                     {"role": "user", "content": message},
                 ],
                 "stream": False,
@@ -95,25 +112,28 @@ async def _call_ollama(message: str) -> str:
 async def handle_chat(message: str) -> str:
     """
     Process a user message.
-    Primary: Gemini  →  Fallback: OpenAI  →  Local: Ollama
+    Flow: extract_memory → build context → LLM fallback chain → respond
     """
-    # 1️⃣ Try Gemini first
+    # 0️⃣ Extract and store any personal facts from the message
+    extract_memory(message)
+
+    # 1️⃣ Try Ollama (local Gemma) first
+    try:
+        return await _call_ollama(message)
+    except Exception as ollama_err:
+        print(f"⚠️  Ollama failed ({ollama_err}), falling back to Gemini...")
+
+    # 2️⃣ Fallback to Gemini
     try:
         return await _call_gemini(message)
     except Exception as gemini_err:
         print(f"⚠️  Gemini failed ({gemini_err}), falling back to OpenAI...")
 
-    # 2️⃣ Fallback to OpenAI
+    # 3️⃣ Fallback to OpenAI
     try:
         return await _call_openai(message)
     except Exception as openai_err:
-        print(f"⚠️  OpenAI failed ({openai_err}), falling back to Ollama...")
-
-    # 3️⃣ Local fallback with Ollama
-    try:
-        return await _call_ollama(message)
-    except Exception as ollama_err:
-        print(f"❌ Ollama also failed: {ollama_err}")
+        print(f"❌ OpenAI also failed: {openai_err}")
 
     # 4️⃣ Everything failed
     return "All neural network connections are offline, sir. Please check that Ollama is running locally."

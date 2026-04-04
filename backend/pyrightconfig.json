@@ -1,0 +1,10 @@
+{
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [".", "db", "services", "models"]
+    }
+  ],
+  "venvPath": ".",
+  "venv": "venv"
+}
