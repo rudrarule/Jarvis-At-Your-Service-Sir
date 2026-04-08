@@ -41,16 +41,41 @@ OLLAMA_MODEL = "gemma3:4b"
 
 
 def _build_system_prompt(memory_context: str) -> str:
-    """Build the full system prompt with retrieved memory context."""
+    """Build the full system prompt with retrieved memory context and tool descriptions."""
+    
+    tools_section = (
+        "\n\n### TOOL REASONING FRAMEWORK\n"
+        "You must analyze every user request using a strict thought process before acting. "
+        "You have access to the following tool:\n"
+        "- play_music (Input: query string) -> Opens YouTube to play a requested song.\n\n"
+        "### REQUIRED OUTPUT FORMAT\n"
+        "You MUST structure your ENTIRE reply using exactly these four sections:\n\n"
+        "THOUGHT: [Analyze user intent. Do they want music played? Or just a normal question?]\n"
+        "TOOL: [Output 'play_music' ONLY if they want to hear a song. Otherwise, output 'None']\n"
+        "ARGS: [If TOOL is play_music, output {\"query\": \"song name\"}. Otherwise, output {}]\n"
+        "RESPONSE: [Your actual conversational reply to the user. Speak normally as Jarvis.]\n\n"
+        "### EXAMPLES\n\n"
+        "User: jarvis what's the news about Iran\n"
+        "THOUGHT: The user is asking a general knowledge question about current events in Iran.\n"
+        "TOOL: None\n"
+        "ARGS: {}\n"
+        "RESPONSE: Sir, current reports indicate heightened geopolitical activity in the region.\n\n"
+        "User: play my favourite song by muse\n"
+        "THOUGHT: The user wants to listen to music. I will use the play_music tool for Muse.\n"
+        "TOOL: play_music\n"
+        "ARGS: {\"query\": \"favourite song by muse\"}\n"
+        "RESPONSE: Certainly, sir. Opening YouTube to play Muse for you now.\n"
+    )
+    
     if memory_context:
         return (
             f"{JARVIS_BASE_PROMPT}\n\n"
             f"--- User Memory (retrieved from long-term storage) ---\n"
-            f"You remember the following about this user. Use this naturally in your responses:\n"
             f"{memory_context}\n"
             f"--- End Memory ---"
+            f"{tools_section}"
         )
-    return JARVIS_BASE_PROMPT
+    return JARVIS_BASE_PROMPT + tools_section
 
 
 # ── LLM Call Functions ────────────────────────────────────

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import ParticleBackground from "@/components/jarvis/ParticleBackground";
 import AICore from "@/components/jarvis/AICore";
@@ -8,6 +8,7 @@ import VoiceButton from "@/components/jarvis/VoiceButton";
 import ModeSwitch from "@/components/jarvis/ModeSwitch";
 import HolographicPanels from "@/components/jarvis/HolographicPanels";
 import { useJarvis } from "@/hooks/useJarvis";
+import { useJarvisWake } from "@/hooks/useJarvisWake";
 
 const Index = () => {
   const [mode, setMode] = useState<"chat" | "automation">("chat");
@@ -20,9 +21,46 @@ const Index = () => {
     sendMessage,
   } = useJarvis();
 
+  // Voice activation: "Hey Jarvis" wake word
+  const { isWakeActive, startWakeSystem, stopWakeSystem } =
+    useJarvisWake(toggleListening, isListening);
+
+  // Auto-start the wake system once on mount
+  const startRef = useRef(startWakeSystem);
+  const stopRef = useRef(stopWakeSystem);
+  startRef.current = startWakeSystem;
+  stopRef.current = stopWakeSystem;
+
+  useEffect(() => {
+    // Small delay to let browser settle, then start
+    const timer = setTimeout(() => startRef.current(), 500);
+    return () => {
+      clearTimeout(timer);
+      stopRef.current();
+    };
+  }, []);
+
   const toggleMode = useCallback(() => {
     setMode((prev) => (prev === "chat" ? "automation" : "chat"));
   }, []);
+
+  // Wrap the UI mic button so it correctly stops the wake listener before starting the main listener
+  const handleManualMicToggle = useCallback(() => {
+    if (!isListening) {
+      // Before manually starting the mic, stop the wake word listener to avoid a conflict
+      stopWakeSystem();
+      
+      // Delay slightly to give Chrome time to fully release the microphone
+      setTimeout(() => {
+        toggleListening();
+      }, 350);
+    } else {
+      // If currently listening, just stop it normally.
+      // useJarvisWake's useEffect will automatically restart the wake system 
+      // when isListening becomes false.
+      toggleListening();
+    }
+  }, [isListening, stopWakeSystem, toggleListening]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
@@ -67,7 +105,7 @@ const Index = () => {
           <div className="flex flex-col items-center gap-4">
             <AICore isListening={isListening} isResponding={isResponding} />
             <Waveform isActive={isListening} />
-            <VoiceButton isListening={isListening} onToggle={toggleListening} />
+            <VoiceButton isListening={isListening} onToggle={handleManualMicToggle} />
           </div>
 
           {/* Right: Chat Panel */}
@@ -86,6 +124,7 @@ const Index = () => {
       >
         <div className="glass-panel px-6 py-2 flex items-center gap-6">
           <StatusDot label="NEURAL NET" active />
+          <StatusDot label="WAKE" active={isWakeActive} />
           <StatusDot label="VOICE" active={isListening} />
           <StatusDot label="MODE" value={mode.toUpperCase()} />
         </div>
