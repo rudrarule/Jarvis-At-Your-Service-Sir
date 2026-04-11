@@ -104,7 +104,7 @@ const Index = () => {
           {/* Center: AI Core + Waveform + Voice Button */}
           <div className="flex flex-col items-center gap-4">
             <AICore isListening={isListening} isResponding={isResponding} />
-            <Waveform isActive={isListening} />
+            <Waveform isActive={isListening || isResponding} />
             <VoiceButton isListening={isListening} onToggle={handleManualMicToggle} />
           </div>
 
@@ -123,6 +123,7 @@ const Index = () => {
         className="absolute bottom-4 left-0 right-0 z-20 flex justify-center"
       >
         <div className="glass-panel px-6 py-2 flex items-center gap-6">
+          <StatusDot label="SYSTEM" value={isResponding ? "THINKING" : "IDLE"} active={isResponding} />
           <StatusDot label="NEURAL NET" active />
           <StatusDot label="WAKE" active={isWakeActive} />
           <StatusDot label="VOICE" active={isListening} />

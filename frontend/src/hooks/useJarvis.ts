@@ -60,6 +60,13 @@ export function useJarvis() {
       ]);
 
       setIsResponding(true);
+      // UX Enhancement: Provide instant audio & visual feedback
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 1, text: "Certainly, sir. Give me a moment.", sender: "jarvis" },
+      ]);
+      speak("Certainly, sir. Give me a moment.");
+      
       try {
         const res = await fetch(`${BACKEND_URL}/chat`, {
           method: "POST",

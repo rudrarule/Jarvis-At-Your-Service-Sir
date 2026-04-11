@@ -34,14 +34,21 @@ export default function AICore({ isListening, isResponding }: AICoreProps) {
       ctx.fillStyle = glowGrad;
       ctx.fillRect(0, 0, size, size);
 
-      // Rings
+      // Rings: Speed up rotation when thinking for a high-energy look
       const drawRing = (radius: number, opacity: number, speed: number) => {
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(time * speed);
+        // Multiply by 2.5 to make it spin rapidly when processing
+        const currentSpeed = isResponding ? speed * 2.5 : speed;
+        ctx.rotate(time * currentSpeed);
         ctx.beginPath();
         ctx.ellipse(0, 0, radius, radius * 0.4, Math.sin(time * 0.3) * 0.3, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0, 170, 255, ${opacity})`;
+        
+        // Shift ring color to purple/pink when thinking
+        ctx.strokeStyle = isResponding 
+          ? `rgba(180, 50, 255, ${opacity * 1.5})` 
+          : `rgba(0, 170, 255, ${opacity})`;
+          
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.restore();
@@ -56,15 +63,23 @@ export default function AICore({ isListening, isResponding }: AICoreProps) {
       const radius = baseRadius + breathe + scaleBonus;
 
       const sphereGrad = ctx.createRadialGradient(cx - 15, cy - 15, 10, cx, cy, radius);
-      sphereGrad.addColorStop(0, "rgba(0, 200, 255, 0.9)");
-      sphereGrad.addColorStop(0.5, "rgba(0, 100, 204, 0.8)");
-      sphereGrad.addColorStop(1, "rgba(0, 50, 150, 0.3)");
+      
+      if (isResponding) {
+        sphereGrad.addColorStop(0, "rgba(200, 100, 255, 0.9)");
+        sphereGrad.addColorStop(0.5, "rgba(100, 50, 204, 0.8)");
+        sphereGrad.addColorStop(1, "rgba(50, 0, 150, 0.3)");
+        ctx.shadowColor = `rgba(160, 50, 255, 0.9)`;
+      } else {
+        sphereGrad.addColorStop(0, "rgba(0, 200, 255, 0.9)");
+        sphereGrad.addColorStop(0.5, "rgba(0, 100, 204, 0.8)");
+        sphereGrad.addColorStop(1, "rgba(0, 50, 150, 0.3)");
+        ctx.shadowColor = `rgba(0, 136, 255, ${isResponding ? 0.8 : 0.5})`;
+      }
 
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.fillStyle = sphereGrad;
-      ctx.shadowBlur = 40;
-      ctx.shadowColor = `rgba(0, 136, 255, ${isResponding ? 0.8 : 0.5})`;
+      ctx.shadowBlur = isResponding ? 60 : 40;
       ctx.fill();
 
       // Inner core
