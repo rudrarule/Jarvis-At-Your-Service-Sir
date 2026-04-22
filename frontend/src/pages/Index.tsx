@@ -3,15 +3,19 @@ import { motion } from "framer-motion";
 import ParticleBackground from "@/components/jarvis/ParticleBackground";
 import AICore from "@/components/jarvis/AICore";
 import Waveform from "@/components/jarvis/Waveform";
-import ChatPanel from "@/components/jarvis/ChatPanel";
+import EnhancedChatPanel from "@/components/jarvis/EnhancedChatPanel";
 import VoiceButton from "@/components/jarvis/VoiceButton";
 import ModeSwitch from "@/components/jarvis/ModeSwitch";
 import HolographicPanels from "@/components/jarvis/HolographicPanels";
+import ConnectionStatus from "@/components/jarvis/ConnectionStatus";
+import KeyboardShortcuts from "@/components/jarvis/KeyboardShortcuts";
 import { useJarvis } from "@/hooks/useJarvis";
 import { useJarvisWake } from "@/hooks/useJarvisWake";
 
 const Index = () => {
   const [mode, setMode] = useState<"chat" | "automation">("chat");
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   const {
     isListening,
@@ -40,6 +44,31 @@ const Index = () => {
     };
   }, []);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Show shortcuts modal on ? (when not typing)
+      if (e.key === "?" && document.activeElement?.tagName !== "INPUT") {
+        setShowShortcuts(true);
+      }
+      // Clear error on Escape
+      if (e.key === "Escape") {
+        setBackendError(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Handle backend errors from messages
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.text.includes("Connection to backend lost")) {
+      setBackendError("Unable to connect to JARVIS backend. Please ensure the server is running on port 8002.");
+    }
+  }, [messages]);
+
   const toggleMode = useCallback(() => {
     setMode((prev) => (prev === "chat" ? "automation" : "chat"));
   }, []);
@@ -64,6 +93,12 @@ const Index = () => {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
+      {/* Connection Status */}
+      <ConnectionStatus />
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcuts isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+
       {/* Particle background */}
       <ParticleBackground />
 
@@ -110,7 +145,13 @@ const Index = () => {
 
           {/* Right: Chat Panel */}
           <div className="hidden md:block">
-            <ChatPanel messages={messages} onSendMessage={sendMessage} />
+            <EnhancedChatPanel
+              messages={messages}
+              onSendMessage={sendMessage}
+              isResponding={isResponding}
+              error={backendError}
+              onRetry={() => setBackendError(null)}
+            />
           </div>
         </div>
       </div>
@@ -128,6 +169,18 @@ const Index = () => {
           <StatusDot label="WAKE" active={isWakeActive} />
           <StatusDot label="VOICE" active={isListening} />
           <StatusDot label="MODE" value={mode.toUpperCase()} />
+
+          {/* Divider */}
+          <div className="w-px h-4 bg-jarvis-border/30" />
+
+          {/* Help button */}
+          <button
+            onClick={() => setShowShortcuts(true)}
+            className="text-[10px] font-display tracking-wider text-jarvis-dim hover:text-primary transition-colors"
+            title="Keyboard shortcuts (Press ?)"
+          >
+            [?] HELP
+          </button>
         </div>
       </motion.div>
     </div>

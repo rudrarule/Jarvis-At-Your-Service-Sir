@@ -26,7 +26,7 @@ def play_music(query: str) -> tuple[str, str]:
             title = query.title() 
             
             autoplay_link = f"{link}&autoplay=1"
-            print(f"🎵 Opening YouTube: {title} ({autoplay_link})")
+            print(f"Opening YouTube: {title} ({autoplay_link})")
             
             webbrowser.open(autoplay_link)
             return title, link

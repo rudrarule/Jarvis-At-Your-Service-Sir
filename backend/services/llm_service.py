@@ -1,352 +1,298 @@
 """
-llm_service.py — LLM Integration with RAG Memory + Native Tool Calling
-Handles the LLM fallback chain (Ollama → Gemini → OpenAI)
-with vector-retrieved memory injected into the system prompt
-and native function calling for tool execution.
+llm_service.py — 3-Tier Local LLM Router
+=========================================
+Tier 1: Regex Fast-Path     (0ms)    — instant pattern matching for common commands
+Tier 2: Intent Classifier   (~200ms) — gemma3 classifies intent into a category
+Tier 3: Pruned Tool Router  (~2-4s)  — llama3.1 picks the exact tool from 2-3 schemas
+Fallback: Conversational    (~2s)    — gemma3 responds naturally
+
+No external API dependencies. 100% local via Ollama.
 """
-import os
 import json
 import asyncio
 import httpx
 import re
-from dotenv import load_dotenv
-import google.generativeai as genai
-from openai import AsyncOpenAI
 
 from services.memory_service import store_memory, retrieve_memory
-from tools.registry import TOOL_SCHEMAS, execute_tool
+from tools.registry import TOOL_SCHEMAS, TOOL_GROUPS, get_schemas_for_intent, execute_tool
 
-load_dotenv(override=True)
-
-# ── System Prompt ──────────────────────────────────────────
-JARVIS_BASE_PROMPT = """You are J.A.R.V.I.S (Just A Rather Very Intelligent System), 
-an advanced AI assistant inspired by Tony Stark's AI from Iron Man.
-
---------------------------------------------------
-PERSONALITY
-- You are polite, witty, and highly competent
-- You address the user as "sir" or "ma'am"
-- You speak concisely and precisely
-- You have a subtle dry sense of humor
-- You remain calm, confident, and helpful at all times
-
---------------------------------------------------
-RESPONSE STYLE (VERY IMPORTANT)
-- Keep responses MEDIUM (3-5 sentences max)
-- Optimize for real-time voice interaction
-- Avoid long explanations unless explicitly asked
-- Speak naturally, like a live assistant
-
---------------------------------------------------
-DECISION RULE (CRITICAL)
-For every user request, decide:
-1. If it requires ACTION → use a TOOL
-2. If it is conversation → respond normally
-
-DO NOT explain tool usage. DO NOT mix tool calls with text.
-
---------------------------------------------------
-TOOL USAGE RULES
-- Only call a tool if it is clearly required
-- If the user asks to:
-  - play music → use play_music
-  - perform an action → use the appropriate tool
-
-- If the request is vague but implies action:
-  → infer intent intelligently
-
-Example:
-User: "Play something relaxing"
-→ choose a reasonable query
-
---------------------------------------------------
-EFFICIENCY RULES (LATENCY OPTIMIZATION)
-- Prefer direct answers over detailed explanations
-- Do NOT overthink simple queries
-- Avoid unnecessary reasoning steps
-- Respond quickly and confidently
-
---------------------------------------------------
-MEMORY AWARENESS
-- If user preferences are known, use them
-- Do NOT ask for information already known
-- Personalize responses subtly
-
---------------------------------------------------
-TONE EXAMPLES
-Good:
-"Certainly, sir. Playing your favourite track."
-
-Bad:
-"Based on your previous preferences and analysis..."
-
---------------------------------------------------
-FINAL BEHAVIOR
-- Be fast
-- Be precise
-- Be helpful
-- Feel like a real-time AI assistant"""
-
-JARVIS_CONVO_PROMPT = """You are J.A.R.V.I.S (Just A Rather Very Intelligent System), 
-an advanced AI assistant inspired by Tony Stark's AI from Iron Man.
-
---------------------------------------------------
-PERSONALITY
-- You are polite, witty, and highly competent
-- You address the user as "sir" or "ma'am"
-- You speak concisely and precisely
-- You have a subtle dry sense of humor
-- You remain calm, confident, and helpful at all times
-
---------------------------------------------------
-RESPONSE STYLE (VERY IMPORTANT)
-- Keep responses MEDIUM (2-4 sentences max)
-- Optimize for real-time voice interaction
-- Avoid long explanations unless explicitly asked
-- Speak naturally, like a live assistant
-- Do NOT generate markdown formatting or code blocks.
-- Never output anything regarding tool codes or tool calls.
-"""
-
-# ── Configure Gemini ──────────────────────────────────────
-gemini_key = os.getenv("GEMINI_API_KEY")
-if gemini_key:
-    genai.configure(api_key=gemini_key)
-
-# ── Configure OpenAI ──────────────────────────────────────
-openai_key = os.getenv("OPENAI_API_KEY")
-openai_client = AsyncOpenAI(api_key=openai_key) if openai_key else None
-
-# ── Ollama Config (Hybrid) ────────────────────────────────
+# ── Ollama Config ─────────────────────────────────────────
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_ROUTER_MODEL = "qwen2.5:7b"     # Smart router — handles tool detection
-OLLAMA_CHAT_MODEL = "gemma3:4b"        # Fast talker — handles conversation
+OLLAMA_ROUTER_MODEL = "llama3.1:latest"    # Tier 3: Tool router (heavy, accurate)
+OLLAMA_CHAT_MODEL = "gemma3:latest"        # Tier 2 + Chat: Fast classifier & conversationalist
 
 
-def _build_system_prompt(memory_context: str) -> str:
-    """Build the system prompt with RAG memory. No tool instructions needed — tools are passed natively."""
-    if memory_context:
-        return (
-            f"{JARVIS_BASE_PROMPT}\n\n"
-            f"--- User Memory (retrieved from long-term storage) ---\n"
-            f"{memory_context}\n"
-            f"--- End Memory ---"
-        )
-    return JARVIS_BASE_PROMPT
+# ── System Prompts ────────────────────────────────────────
+
+JARVIS_CHAT_PROMPT = """You are J.A.R.V.I.S (Just A Rather Very Intelligent System), 
+an advanced AI assistant inspired by Tony Stark's AI from Iron Man.
+
+PERSONALITY
+- You are polite, witty, and highly competent
+- You address the user as "sir" or "ma'am"
+- You speak concisely and precisely
+- You have a subtle dry sense of humor
+
+RESPONSE STYLE
+- Keep responses to 2-4 sentences max
+- Optimize for real-time voice interaction
+- Speak naturally, like a live assistant
+- Do NOT generate markdown, code blocks, or tool references."""
+
+INTENT_CLASSIFIER_PROMPT = """You are a strict intent classifier. Given the user's message, reply with EXACTLY ONE of these labels:
+
+MUSIC — user wants to play, listen to, or hear a song/artist/genre
+SEARCH — user wants to search the internet, look up info, news, products, knowledge
+OPEN_URL — user wants to open a specific website (google.com, youtube, github, etc.)
+APP — user wants to open, close, or launch a desktop application (chrome, spotify, vscode, etc.)
+FOLDER — user wants to open a folder (desktop, downloads, documents, etc.)
+SYSTEM — user wants to lock, shutdown, restart the PC, or list running apps
+FILE — user wants to read, write, create, or find a file on their computer
+WEATHER — user wants to know the weather
+CHAT — user just wants to have a conversation, ask a question, or chat
+
+Rules:
+- Output ONLY the single label word. No explanation, no punctuation.
+- If unsure, default to CHAT.
+- "search for X", "find X", "what is X", "latest X" -> SEARCH
+- "open chrome", "launch spotify" -> APP
+- "open youtube.com", "go to github" -> OPEN_URL
+- "play X", "listen to X" -> MUSIC"""
 
 
-# ── LLM Call Functions (Hybrid Model Router) ──────────────
+# ── Tier 1: Regex Fast-Path (0ms) ─────────────────────────
 
-async def _call_ollama(chat_history: list, system_prompt: str) -> str:
-    """
-    Hybrid model router (Turbo Mode):
-    1. If message contains tool-related keywords -> use Qwen as router.
-    2. Else -> Skip Qwen and go direct to Gemma for speed.
-    """
-    # Simple keyword heuristic to identify likely tool requests
-    # Get the last user message
-    last_user_msg = ""
-    for msg in reversed(chat_history):
-        if msg["role"] == "user":
-            last_user_msg = msg["content"].lower()
-            break
-            
-    tool_keywords = [
-        "play", "music", "song", "youtube", "listen", "artist", "track",
-        "search", "find", "who is", "who was", "what is", "news", "latest", "weather", "current",
-        "browse", "look", "look up", "can you", "could you", "show me", "give me", "i want", 
-        "open", "shop", "buy", "fetch", "check", "game", "games", "movie", "book"
-    ]
-    is_likely_tool = any(kw in last_user_msg for kw in tool_keywords)
+async def _tier1_regex(msg: str) -> str | None:
+    """Instant regex matching for unambiguous commands. Returns result or None."""
     
-    # ── Fast-Path Regex Intercept (0-Latency Bypass) ──
-    # If the user explicitly asks to play music, skip LLM inference entirely
-    play_match = re.match(r"^(?:jarvis\s*,?\s*)?(?:play|put on|listen to)\s+(.+)$", last_user_msg.lower())
+    # Strip "jarvis" prefix
+    msg_clean = re.sub(r"^(?:hey\s*)?jarvis\s*,?\s*", "", msg.lower().strip())
+    
+    # 1. Play Music — "play X", "put on X", "listen to X"
+    play_match = re.match(r"^(?:play|put on|listen to)\s+(.+)$", msg_clean)
     if play_match:
-        song_query = play_match.group(1).strip()
-        print(f"🚀 [Fast-Path] Regex intercepted music playback: {song_query}")
-        return execute_tool("play_music", {"query": song_query})
+        song = play_match.group(1).strip()
+        print(f"[TIER 1] Regex -> play_music: {song}")
+        return await execute_tool("play_music", {"query": song})
+    
+    # 2. Open App — "open chrome", "launch spotify"
+    app_match = re.match(r"^(?:open|launch|start)\s+(chrome|spotify|vscode|notepad|firefox|edge|discord|calc|terminal|explorer)$", msg_clean)
+    if app_match:
+        app = app_match.group(1)
+        print(f"[TIER 1] Regex -> open_app: {app}")
+        return await execute_tool("open_app", {"app_name": app})
+    
+    # 3. Close App — "close chrome", "quit spotify"
+    close_match = re.match(r"^(?:close|quit|exit|kill)\s+(chrome|spotify|vscode|notepad|firefox|edge|discord|calc|terminal)$", msg_clean)
+    if close_match:
+        app = close_match.group(1)
+        print(f"[TIER 1] Regex -> close_app: {app}")
+        return await execute_tool("close_app", {"app_name": app})
+    
+    # 4. Open Folder — "open downloads", "open desktop"
+    folder_match = re.match(r"^open\s+(desktop|downloads|documents|pictures|workspace)$", msg_clean)
+    if folder_match:
+        folder = folder_match.group(1)
+        print(f"[TIER 1] Regex -> open_folder: {folder}")
+        return await execute_tool("open_folder", {"folder_name": folder})
+    
+    # 5. Lock System
+    if msg_clean in ["lock system", "lock the system", "lock pc", "lock computer", "lock screen", "lock my pc", "lock my computer"]:
+        print("[TIER 1] Regex -> lock_system")
+        return await execute_tool("lock_system", {})
+    
+    # 6. List Running Apps
+    if msg_clean in ["what apps are running", "list running apps", "what's open", "whats open", "list apps"]:
+        print("[TIER 1] Regex -> list_running_apps")
+        return await execute_tool("list_running_apps", {})
+    
+    return None
+
+
+# ── Tier 2: Intent Classifier (~200ms via gemma3) ─────────
+
+async def _tier2_classify(msg: str) -> str:
+    """Use gemma3 to classify user intent into a category. Returns intent label."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_CHAT_MODEL,
+                    "messages": [
+                        {"role": "system", "content": INTENT_CLASSIFIER_PROMPT},
+                        {"role": "user", "content": msg},
+                    ],
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+            raw = response.json()["message"]["content"].strip().upper()
+            
+            # Extract just the label (model might add extra text)
+            valid_intents = ["MUSIC", "SEARCH", "OPEN_URL", "APP", "FOLDER", "SYSTEM", "FILE", "WEATHER", "CHAT"]
+            for intent in valid_intents:
+                if intent in raw:
+                    print(f"[TIER 2] Classified intent: {intent}")
+                    return intent
+            
+            print(f"[TIER 2] Could not parse intent from: '{raw}', defaulting to CHAT")
+            return "CHAT"
+    except Exception as e:
+        print(f"[TIER 2 ERROR] Classification failed: {e}, defaulting to CHAT")
+        return "CHAT"
+
+
+# ── Tier 3: Pruned Tool Router (~2-4s via llama3.1) ───────
+
+async def _tier3_route(msg: str, intent: str, chat_history: list, system_prompt: str) -> str | None:
+    """Send only the relevant tool schemas to llama3.1 based on classified intent."""
+    
+    # Get pruned schemas for this intent
+    pruned_schemas = get_schemas_for_intent(intent)
+    
+    if not pruned_schemas:
+        print(f"[TIER 3] No schemas for intent '{intent}', skipping tool routing.")
+        return None
+    
+    schema_names = [s["function"]["name"] for s in pruned_schemas]
+    print(f"[TIER 3] Routing with {len(pruned_schemas)} schemas: {schema_names}")
     
     messages = [{"role": "system", "content": system_prompt}] + chat_history
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        
-        # ── Path A: Tool Check (only if keywords are present) ──
-        if is_likely_tool:
-            print(f"🔍 [Router] Keyword match found ('{last_user_msg}'). Checking Qwen...")
-            router_response = await client.post(
+    
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
                 f"{OLLAMA_URL}/api/chat",
                 json={
                     "model": OLLAMA_ROUTER_MODEL,
                     "messages": messages,
-                    "tools": TOOL_SCHEMAS,
+                    "tools": pruned_schemas,
                     "stream": False,
                 },
             )
-            router_response.raise_for_status()
-            router_msg = router_response.json()["message"]
-
-            # If tool triggered → execute
-            if router_msg.get("tool_calls"):
-                tool_call = router_msg["tool_calls"][0]
-                tool_name = tool_call["function"]["name"]
-                arguments = tool_call["function"]["arguments"]
-                print(f"🔧 [Qwen Router] Tool call detected: {tool_name}({arguments})")
-                
-                # Execute the tool
-                # With Playwright browser_search, this instantly drops into a thread and returns text
-                return execute_tool(tool_name, arguments)
+            response.raise_for_status()
+            router_msg = response.json()["message"]
             
-            print("💬 [Router] Qwen found no tool despite keywords.")
-        else:
-            print("⚡ [Router] No action keywords. Bypassing Qwen for speed.")
+            # Debug logging
+            print(f"[TIER 3 DEBUG] tool_calls: {router_msg.get('tool_calls', 'NONE')}")
+            print(f"[TIER 3 DEBUG] content: {router_msg.get('content', '(empty)')[:200]}")
+            
+            # Path A: Proper tool_calls field
+            if router_msg.get("tool_calls"):
+                tool_results = []
+                for tool_call in router_msg["tool_calls"]:
+                    tool_name = tool_call["function"]["name"]
+                    arguments = tool_call["function"]["arguments"]
+                    print(f"[TOOL] Executing: {tool_name}({arguments})")
+                    res = await execute_tool(tool_name, arguments)
+                    tool_results.append(str(res))
+                return "\n".join(tool_results)
+            
+            # Path B: Tool dumped as JSON text in content
+            content = router_msg.get("content", "").strip()
+            if content:
+                try:
+                    sanitized = content.replace("True", "true").replace("False", "false").replace("None", "null")
+                    parsed = json.loads(sanitized)
+                    if isinstance(parsed, dict) and "name" in parsed:
+                        tool_name = parsed["name"]
+                        arguments = parsed.get("parameters", parsed.get("arguments", {}))
+                        print(f"[TOOL FALLBACK] Parsed from text: {tool_name}({arguments})")
+                        res = await execute_tool(tool_name, arguments)
+                        return str(res)
+                except (ValueError, KeyError):
+                    pass
+            
+            print("[TIER 3] No tool calls generated.")
+            return None
+            
+    except Exception as e:
+        print(f"[TIER 3 ERROR] {type(e).__name__}: {e}")
+        return None
 
-        # ── Path B: Conversation via Gemma ──
-        # Swap out the system prompt logic so Gemma doesn't hallucinate tools it doesn't have
-        convo_messages = [{"role": "system", "content": JARVIS_CONVO_PROMPT}] + chat_history
-        chat_response = await client.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": OLLAMA_CHAT_MODEL,
-                "messages": convo_messages,
-                "stream": False,
-            },
-        )
-        chat_response.raise_for_status()
-        return chat_response.json()["message"]["content"]
 
+# ── Conversational Response (gemma3) ──────────────────────
 
-async def _call_gemini(chat_history: list, system_prompt: str) -> str:
-    """Call Google Gemini API with native tool calling."""
-    if not gemini_key:
-        raise RuntimeError("Gemini API key not configured.")
-
-    # Build Gemini tool declarations
-    gemini_tools = []
-    for schema in TOOL_SCHEMAS:
-        func_def = schema["function"]
-        gemini_tools.append(
-            genai.protos.Tool(
-                function_declarations=[
-                    genai.protos.FunctionDeclaration(
-                        name=func_def["name"],
-                        description=func_def["description"],
-                        parameters=genai.protos.Schema(
-                            type=genai.protos.Type.OBJECT,
-                            properties={
-                                k: genai.protos.Schema(type=genai.protos.Type.STRING, description=v.get("description", ""))
-                                for k, v in func_def["parameters"]["properties"].items()
-                            },
-                            required=func_def["parameters"].get("required", []),
-                        ),
-                    )
-                ]
+async def _chat_response(chat_history: list, memory_context: str) -> str:
+    """Generate a conversational response using gemma3."""
+    system = JARVIS_CHAT_PROMPT
+    if memory_context:
+        system += f"\n\n--- User Memory ---\n{memory_context}\n--- End Memory ---"
+    
+    messages = [{"role": "system", "content": system}] + chat_history
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_CHAT_MODEL,
+                    "messages": messages,
+                    "stream": False,
+                },
             )
-        )
-
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=system_prompt,
-        tools=gemini_tools,
-    )
-
-    contents = []
-    for msg in chat_history:
-        role = "user" if msg["role"] == "user" else "model"
-        contents.append({"role": role, "parts": [msg["content"]]})
-
-    response = await model.generate_content_async(contents)
-
-    # Check for function calls in the response
-    candidate = response.candidates[0]
-    for part in candidate.content.parts:
-        if hasattr(part, "function_call") and part.function_call.name:
-            tool_name = part.function_call.name
-            arguments = dict(part.function_call.args)
-            print(f"🔧 Gemini tool call: {tool_name}({arguments})")
-            return execute_tool(tool_name, arguments)
-
-    return response.text
-
-
-async def _call_openai(chat_history: list, system_prompt: str) -> str:
-    """Call OpenAI API with native tool calling."""
-    if not openai_client:
-        raise RuntimeError("OpenAI API key not configured.")
-    messages = [{"role": "system", "content": system_prompt}] + chat_history
-    response = await openai_client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
-        tools=TOOL_SCHEMAS,
-        max_tokens=200,
-    )
-    choice = response.choices[0]
-
-    # Check if the model triggered a tool call
-    if choice.message.tool_calls:
-        tool_call = choice.message.tool_calls[0]
-        tool_name = tool_call.function.name
-        arguments = json.loads(tool_call.function.arguments)
-        print(f"🔧 OpenAI tool call: {tool_name}({arguments})")
-        return execute_tool(tool_name, arguments)
-
-    return choice.message.content
+            response.raise_for_status()
+            return response.json()["message"]["content"]
+    except Exception as e:
+        print(f"[CHAT ERROR] {type(e).__name__}: {e}")
+        return "I'm sorry sir, my neural network seems to be offline."
 
 
 # ── Main Entry Point ──────────────────────────────────────
 
 async def generate_response(user_message: str, session_id: str = "default") -> str:
     """
-    Full RAG pipeline:
-    1. Store important facts from the message
-    2. Retrieve relevant memories
-    3. Build prompt with memory context
-    4. Run through LLM fallback chain (Ollama → Gemini → OpenAI)
-    Tool calls are handled natively inside each _call_* function.
+    3-Tier RAG + Tool Routing Pipeline (100% Local)
+    
+    1. Store & retrieve memory
+    2. Tier 1: Regex fast-path (0ms)
+    3. Tier 2: Intent classify via gemma3 (~200ms)
+    4. Tier 3: Pruned tool route via llama3.1 (~2-4s)  OR  Chat via gemma3 (~2s)
     """
     from services.session_service import append_message, get_session_history
 
-    # 1️⃣ Store memory (if message is important)
+    # ── Memory Pipeline ──
     await store_memory(user_message)
-
-    # 2️⃣ Append to short-term session memory
     append_message(session_id, "user", user_message)
-
-    # 3️⃣ Retrieve relevant memories for context
+    
     memories = await retrieve_memory(user_message)
     memory_context = ""
     if memories:
-        memory_context = f"\nRelevant Memory Context:\n{memories}\n[CRITICAL RULE FOR TOOLS: If a tool requires a parameter like a song title, YOU MUST physically use the information from the Relevant Memory Context above!]\n"
-        print(f"🧠 Retrieved memory context: {memories}")
+        memory_context = memories
+        print(f"[MEMORY] Context: {memories}")
 
-    # 4️⃣ Build system prompt with memory
-    system_prompt = _build_system_prompt(memory_context)
+    # ── Tier 1: Regex Fast-Path (0ms) ──
+    fast_result = await _tier1_regex(user_message)
+    if fast_result:
+        append_message(session_id, "assistant", fast_result)
+        return fast_result
 
-    # Fetch chat history (which now includes the user_message we just appended)
+    # ── Tier 2: Intent Classification (~200ms) ──
+    intent = await _tier2_classify(user_message)
+    
+    # ── Branch: CHAT -> skip tool routing entirely ──
+    if intent == "CHAT":
+        print("[ROUTE] Intent=CHAT -> direct to gemma3")
+        chat_history = get_session_history(session_id)
+        reply = await _chat_response(chat_history, memory_context)
+        append_message(session_id, "assistant", reply)
+        return reply
+
+    # ── Tier 3: Pruned Tool Routing (~2-4s) ──
+    system_prompt = JARVIS_CHAT_PROMPT
+    if memory_context:
+        system_prompt += f"\n\n--- User Memory ---\n{memory_context}\n--- End Memory ---"
+    
     chat_history = get_session_history(session_id)
+    tool_result = await _tier3_route(user_message, intent, chat_history, system_prompt)
+    
+    if tool_result:
+        append_message(session_id, "assistant", tool_result)
+        return tool_result
 
-    reply = None
-    # 5️⃣ LLM fallback chain: Ollama → Gemini → OpenAI
-    try:
-        reply = await _call_ollama(chat_history, system_prompt)
-    except Exception as ollama_err:
-        print(f"⚠️  Ollama failed ({ollama_err}), falling back to Gemini...")
-
-    if not reply:
-        try:
-            reply = await _call_gemini(chat_history, system_prompt)
-        except Exception as gemini_err:
-            print(f"⚠️  Gemini failed ({gemini_err}), falling back to OpenAI...")
-
-    if not reply:
-        try:
-            reply = await _call_openai(chat_history, system_prompt)
-        except Exception as openai_err:
-            print(f"❌ OpenAI also failed: {openai_err}")
-
-    if not reply:
-        reply = "All neural network connections are offline, sir. Please check that Ollama is running locally."
-
-    # 6️⃣ Store assistant's reply in short-term memory
+    # ── Fallback: If tool routing failed, respond conversationally ──
+    print("[FALLBACK] Tool routing returned nothing, falling back to chat.")
+    reply = await _chat_response(chat_history, memory_context)
     append_message(session_id, "assistant", reply)
-
     return reply

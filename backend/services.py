@@ -158,25 +158,29 @@ async def text_to_speech(text: str) -> bytes | None:
         return None
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{url}/{voice_id}",
-            headers={
-                "xi-api-key": api_key,
-                "Content-Type": "application/json",
-                "Accept": "audio/mpeg",
-            },
-            json={
-                "text": text,
-                "model_id": "eleven_multilingual_v2",
-                "voice_settings": {
-                    "stability": 0.75,
-                    "similarity_boost": 0.85,
-                    "style": 0.3,
+        try:
+            response = await client.post(
+                f"{url}/{voice_id}",
+                headers={
+                    "xi-api-key": api_key,
+                    "Content-Type": "application/json",
+                    "Accept": "audio/mpeg",
                 },
-            },
-        )
-        response.raise_for_status()
-        return response.content
+                json={
+                    "text": text,
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {
+                        "stability": 0.75,
+                        "similarity_boost": 0.85,
+                        "style": 0.3,
+                    },
+                },
+            )
+            response.raise_for_status()
+            return response.content
+        except Exception as e:
+            print(f"ElevenLabs TTS failed: {e}")
+            return None
 
 
 # ── Tool Dispatcher ────────────────────────────────────────

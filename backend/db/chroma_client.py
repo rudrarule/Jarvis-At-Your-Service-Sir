@@ -15,4 +15,4 @@ collection = client.get_or_create_collection(
     metadata={"hnsw:space": "cosine"},
 )
 
-print(f"🗄️  ChromaDB ready — {collection.count()} memories loaded from {_DB_PATH}")
+print(f"[ChromaDB] Ready - {collection.count()} memories loaded from {_DB_PATH}")

@@ -62,7 +62,7 @@ async def store_memory(text: str) -> bool:
             distance = results["distances"][0][0]
             similarity = 1 - (distance / 2)
             if similarity >= DUPLICATE_THRESHOLD:
-                print(f"🧠 Skipped duplicate (similarity={similarity:.2f}): {text[:50]}...")
+                print(f"[MEM] Skipped duplicate (similarity={similarity:.2f}): {text[:50]}...")
                 return False
 
     # Enforce max entries — evict oldest if at capacity
@@ -80,7 +80,7 @@ async def store_memory(text: str) -> bool:
             "source": "chat",
         }],
     )
-    print(f"🧠 Memory stored: {text[:60]}...")
+    print(f"[MEM] Memory stored: {text[:60]}...")
     return True
 
 
@@ -133,7 +133,7 @@ def clear_all_memories() -> None:
     # Update the module-level reference in db.chroma_client too
     import db.chroma_client as _db
     _db.collection = collection
-    print("🧠 All memories wiped from ChromaDB.")
+    print("[MEM] All memories wiped from ChromaDB.")
 
 
 def _evict_oldest() -> None:
@@ -152,4 +152,4 @@ def _evict_oldest() -> None:
             oldest_idx = i
 
     collection.delete(ids=[all_data["ids"][oldest_idx]])
-    print(f"🧠 Evicted oldest memory to stay under {MAX_MEMORIES} limit.")
+    print(f"[MEM] Evicted oldest memory to stay under {MAX_MEMORIES} limit.")

@@ -6,7 +6,8 @@ async def run_tests():
         "jarvis what's the news about Iran?",
         "Play perfect by ed sheeran",
         "how do airplanes fly?",
-        "can you play some focus music to help me study?"
+        "can you play some focus music to help me study?",
+        "open spotify and open browser and search for latest news about AI"
     ]
     
     with open("test_op.txt", "w", encoding="utf-8") as f:

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest test_browser_tool.py -v --tb=short)",
+      "Bash(pip install *)",
+      "Bash(playwright install *)",
+      "Bash(python *)",
+      "Bash(npm run *)",
+      "Bash(uvicorn main:app *)",
+      "Bash(curl -s http://localhost:11434/api/tags)"
+    ]
+  }
+}

@@ -43,8 +43,12 @@ async def text_to_speech(text: str) -> bytes | None:
                 },
             },
         )
-        response.raise_for_status()
-        return response.content
+        try:
+            response.raise_for_status()
+            return response.content
+        except httpx.HTTPStatusError as e:
+            print(f"[TTS ERROR] ElevenLabs TTS Error: {e.response.status_code} - {e.response.text}")
+            return None
 
 
 async def dispatch_tool(tool_name: str, params: dict) -> dict:
