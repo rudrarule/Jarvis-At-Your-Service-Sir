@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, PlainTextResponse
@@ -14,10 +17,19 @@ from services.whatsapp_service import (
     BUSY_RESPONSE,
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Warm local subsystems while keeping startup responsive."""
+    asyncio.create_task(text_to_speech_service.warm_start())
+    yield
+
+
 app = FastAPI(
     title="Holo Core Nexus API",
     description="Backend API for the J.A.R.V.I.S holographic AI assistant",
     version="0.3.0",
+    lifespan=lifespan,
 )
 
 # CORS — allow the Vite dev server to call the API
@@ -49,11 +61,65 @@ async def chat(request: ChatRequest):
 
 @app.post("/tts")
 async def tts(request: TTSRequest):
-    """Convert text to speech using ElevenLabs. Returns MP3 audio."""
+    """Convert text to speech using local Edge-TTS. Returns MP3 audio."""
     audio = await text_to_speech_service.text_to_speech(request.text)
     if audio is None:
-        return {"error": "ElevenLabs not configured. Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env"}
+        return {"error": "Local TTS failed. Install edge-tts and ffmpeg/ffplay, or configure Piper fallback."}
     return Response(content=audio, media_type="audio/mpeg")
+
+
+@app.post("/tts/speak")
+async def tts_speak(request: TTSRequest):
+    """Speak text on the backend machine via the local voice queue."""
+    await text_to_speech_service.speak_locally(request.text, interrupt=True)
+    return {"status": "queued"}
+
+
+@app.post("/tts/stop")
+async def tts_stop():
+    """Interrupt current and queued TTS playback."""
+    await text_to_speech_service.stop()
+    return {"status": "stopped"}
+
+
+@app.post("/tts/pause")
+async def tts_pause():
+    await text_to_speech_service.pause()
+    return {"status": "paused"}
+
+
+@app.post("/tts/resume")
+async def tts_resume():
+    await text_to_speech_service.resume()
+    return {"status": "resumed"}
+
+
+@app.post("/tts/voice")
+async def tts_set_voice(voice_name: str = Form(...)):
+    await text_to_speech_service.set_voice(voice_name)
+    return {"voice": voice_name}
+
+
+@app.post("/tts/rate")
+async def tts_set_rate(rate: str = Form(...)):
+    await text_to_speech_service.set_rate(rate)
+    return {"rate": rate}
+
+
+@app.post("/tts/pitch")
+async def tts_set_pitch(pitch: str = Form(...)):
+    await text_to_speech_service.set_pitch(pitch)
+    return {"pitch": pitch}
+
+
+@app.get("/tts/voices")
+async def tts_voices():
+    return {"suggested_voices": text_to_speech_service.suggested_voices()}
+
+
+@app.get("/tts/benchmark")
+async def tts_benchmark(text: str = "Systems online, sir."):
+    return await text_to_speech_service.benchmark(text)
 
 
 @app.get("/memory")
