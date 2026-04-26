@@ -17,17 +17,41 @@ const Index = () => {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
 
+  const starkTriggerRef = useRef<() => void>();
+
+  const handleIntercept = useCallback((text: string) => {
+    const cleaned = text.trim().toLowerCase();
+    // remove punctuation for voice transcripts (e.g. "hey jarvis.")
+    const noPunctuation = cleaned.replace(/[.,?!]/g, "");
+    if (noPunctuation === "hey jarvis" || noPunctuation === "wake up") {
+      if (starkTriggerRef.current) starkTriggerRef.current();
+      return true; // handled
+    }
+    return false;
+  }, []);
+
   const {
     isListening,
     isResponding,
     messages,
     toggleListening,
     sendMessage,
-  } = useJarvis();
+    addMessage,
+  } = useJarvis(handleIntercept);
 
   // Voice activation: "Hey Jarvis" wake word
-  const { isWakeActive, startWakeSystem, stopWakeSystem } =
-    useJarvisWake(toggleListening, isListening);
+  const { isWakeActive, isBooting, startWakeSystem, stopWakeSystem, triggerStarkProtocol, isListeningMusic } =
+    useJarvisWake(toggleListening, isListening, (text) => addMessage(text, "jarvis"));
+
+  useEffect(() => {
+    starkTriggerRef.current = triggerStarkProtocol;
+  }, [triggerStarkProtocol]);
+
+  const handleSendMessage = useCallback((text: string) => {
+    if (!handleIntercept(text)) {
+      sendMessage(text);
+    }
+  }, [sendMessage, handleIntercept]);
 
   // Auto-start the wake system once on mount
   const startRef = useRef(startWakeSystem);
@@ -137,17 +161,31 @@ const Index = () => {
           </motion.div>
 
           {/* Center: AI Core + Waveform + Voice Button */}
-          <div className="flex flex-col items-center gap-4">
-            <AICore isListening={isListening} isResponding={isResponding} />
-            <Waveform isActive={isListening || isResponding} />
-            <VoiceButton isListening={isListening} onToggle={handleManualMicToggle} />
+          <div className="flex flex-col items-center gap-4 relative">
+            <AICore isListening={isListening || isListeningMusic} isResponding={isResponding || isBooting} />
+            <Waveform isActive={isListening || isResponding || isBooting || isListeningMusic} />
+            
+            {/* Contextual temporary visual cue */}
+            {isListeningMusic && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute -bottom-8 whitespace-nowrap font-display text-xs tracking-[0.2em] text-jarvis-dim animate-pulse"
+              >
+                Listening for response...
+              </motion.div>
+            )}
+
+            <div className="mt-4">
+              <VoiceButton isListening={isListening} onToggle={handleManualMicToggle} />
+            </div>
           </div>
 
           {/* Right: Chat Panel */}
           <div className="hidden md:block">
             <EnhancedChatPanel
               messages={messages}
-              onSendMessage={sendMessage}
+              onSendMessage={handleSendMessage}
               isResponding={isResponding}
               error={backendError}
               onRetry={() => setBackendError(null)}

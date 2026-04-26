@@ -32,3 +32,8 @@ dist-ssr
 
 # ChromaDB local data
 **/chroma_data/
+
+# Temporary and generated files
+*.mp3
+**/scratch/
+**/workspace/

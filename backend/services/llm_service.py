@@ -49,11 +49,13 @@ FOLDER — user wants to open a folder (desktop, downloads, documents, etc.)
 SYSTEM — user wants to lock, shutdown, restart the PC, or list running apps
 FILE — user wants to read, write, create, or find a file on their computer
 WEATHER — user wants to know the weather
+WHATSAPP — user wants to check WhatsApp messages, missed calls, or send a message (e.g., "who messaged me", "any new texts", "missed calls")
 CHAT — user just wants to have a conversation, ask a question, or chat
 
 Rules:
 - Output ONLY the single label word. No explanation, no punctuation.
 - If unsure, default to CHAT.
+- "who messaged me", "who called me", "any new messages", "check whatsapp", "read my messages" -> WHATSAPP
 - "search for X", "find X", "what is X", "latest X" -> SEARCH
 - "open chrome", "launch spotify" -> APP
 - "open youtube.com", "go to github" -> OPEN_URL
@@ -106,6 +108,18 @@ async def _tier1_regex(msg: str) -> str | None:
         print("[TIER 1] Regex -> list_running_apps")
         return await execute_tool("list_running_apps", {})
     
+    # 7. WhatsApp Briefing
+    if any(x in msg_clean for x in ["who messaged me", "any new messages", "check whatsapp", "who called me", "any missed calls", "whatsapp briefing"]):
+        print("[TIER 1] Regex -> whatsapp_briefing")
+        return await execute_tool("whatsapp_briefing", {})
+    
+    # 8. Weather — "what's the weather", "weather in Faridabad"
+    weather_match = re.match(r"^(?:what is|what's|how is|how's|check)?\s*(?:the\s*)?weather\s*(?:in|at|for)?\s*(.*?)[?!.]*$", msg_clean)
+    if weather_match:
+        loc = weather_match.group(1).strip()
+        print(f"[TIER 1] Regex -> get_weather: {loc}")
+        return await execute_tool("get_weather", {"location": loc})
+    
     return None
 
 
@@ -130,7 +144,7 @@ async def _tier2_classify(msg: str) -> str:
             raw = response.json()["message"]["content"].strip().upper()
             
             # Extract just the label (model might add extra text)
-            valid_intents = ["MUSIC", "SEARCH", "OPEN_URL", "APP", "FOLDER", "SYSTEM", "FILE", "WEATHER", "CHAT"]
+            valid_intents = ["MUSIC", "SEARCH", "OPEN_URL", "APP", "FOLDER", "SYSTEM", "FILE", "WEATHER", "WHATSAPP", "CHAT"]
             for intent in valid_intents:
                 if intent in raw:
                     print(f"[TIER 2] Classified intent: {intent}")
@@ -141,6 +155,7 @@ async def _tier2_classify(msg: str) -> str:
     except Exception as e:
         print(f"[TIER 2 ERROR] Classification failed: {e}, defaulting to CHAT")
         return "CHAT"
+
 
 
 # ── Tier 3: Pruned Tool Router (~2-4s via llama3.1) ───────

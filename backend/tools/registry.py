@@ -25,6 +25,12 @@ from tools.system_control_tool import (
     restart_system,
     list_running_apps,
 )
+from tools.whatsapp_tool import (
+    whatsapp_briefing,
+    whatsapp_unread,
+    whatsapp_missed_calls,
+    whatsapp_send,
+)
 
 
 # ── Tool Schemas (OpenAI/Ollama format) ───────────────────
@@ -294,6 +300,60 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_briefing",
+            "description": "Get a full WhatsApp briefing including unread messages and missed calls. Use when user asks 'who messaged me', 'any new messages', 'whatsapp update', 'check my messages', 'any missed calls on whatsapp', 'give me my whatsapp briefing'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_unread",
+            "description": "Get only unread WhatsApp messages. Use when user specifically asks about messages only, like 'any unread messages', 'who texted me'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_missed_calls",
+            "description": "Get missed WhatsApp calls. Use when user asks 'any missed calls', 'who called me'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_send",
+            "description": "Send a WhatsApp message to a contact. Use when user says 'text mom', 'send a whatsapp message to X', 'tell X on whatsapp that Y'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contact": {
+                        "type": "string",
+                        "description": "The contact phone number (e.g., '919876543210') or JID"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "The message text to send"
+                    }
+                },
+                "required": ["contact", "message"],
+            },
+        },
+    },
 ]
 
 # ── Function Lookup ───────────────────────────────────────
@@ -315,6 +375,10 @@ TOOL_FUNCTIONS = {
     "shutdown_system": shutdown_system,
     "restart_system": restart_system,
     "list_running_apps": list_running_apps,
+    "whatsapp_briefing": whatsapp_briefing,
+    "whatsapp_unread": whatsapp_unread,
+    "whatsapp_missed_calls": whatsapp_missed_calls,
+    "whatsapp_send": whatsapp_send,
 }
 
 # ── Intent → Tool Group Mapping ──────────────────────────
@@ -329,6 +393,7 @@ TOOL_GROUPS = {
     "SYSTEM":   ["lock_system", "shutdown_system", "restart_system", "list_running_apps"],
     "FILE":     ["read_file", "write_file", "append_file", "list_directory", "search_files", "search_in_files"],
     "WEATHER":  ["get_weather"],
+    "WHATSAPP": ["whatsapp_briefing", "whatsapp_unread", "whatsapp_missed_calls", "whatsapp_send"],
 }
 
 # Build a name→schema lookup for fast pruning
@@ -384,14 +449,16 @@ async def execute_tool(tool_name: str, arguments: dict) -> str:
             else:
                 return "I apologize, sir. I couldn't find that song on YouTube."
 
-        # Browser, URL opener, Weather, file system, and system control tools return formatted strings
+        # Browser, URL opener, Weather, file system, WhatsApp, and system control tools return formatted strings
         file_system_tools = ["read_file", "write_file", "append_file", "list_directory", "search_files", "search_in_files"]
         system_control_tools = ["open_app", "close_app", "open_folder", "lock_system", "shutdown_system", "restart_system", "list_running_apps"]
-        if tool_name in ["browser_search", "open_url", "get_weather"] + file_system_tools + system_control_tools:
+        whatsapp_tools = ["whatsapp_briefing", "whatsapp_unread", "whatsapp_missed_calls", "whatsapp_send"]
+        
+        if tool_name in ["browser_search", "open_url", "get_weather"] + file_system_tools + system_control_tools + whatsapp_tools:
             return result
 
         # Generic fallback for future tools
-        return f"Tool '{tool_name}' executed successfully: {result}"
+        return str(result)
 
     except Exception as e:
         print(f"[TOOL ERROR] Tool execution error ({tool_name}): {e}")

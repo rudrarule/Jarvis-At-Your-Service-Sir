@@ -12,7 +12,7 @@ const BACKEND_URL = "http://localhost:8002";
  * useJarvis — manages the full AI pipeline:
  *   speech recognition → backend calls → chat history → TTS (ElevenLabs or browser)
  */
-export function useJarvis() {
+export function useJarvis(onMessageIntercept?: (text: string) => boolean) {
   const [isListening, setIsListening] = useState(false);
   const [isResponding, setIsResponding] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -127,6 +127,9 @@ export function useJarvis() {
     recognition.onresult = (event: any) => {
       const text = event.results[0][0].transcript;
       setTranscript(text);
+      if (onMessageIntercept && onMessageIntercept(text)) {
+        return;
+      }
       sendToJarvis(text);
     };
 
@@ -155,6 +158,10 @@ export function useJarvis() {
     [sendToJarvis]
   );
 
+  const addMessage = useCallback((text: string, sender: "user" | "jarvis") => {
+    setMessages((prev) => [...prev, { id: Date.now(), text, sender }]);
+  }, []);
+
   return {
     isListening,
     isResponding,
@@ -162,5 +169,6 @@ export function useJarvis() {
     messages,
     toggleListening,
     sendMessage,
+    addMessage,
   };
 }

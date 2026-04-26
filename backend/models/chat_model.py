@@ -15,3 +15,7 @@ class ChatResponse(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
+
+
+class MusicRequest(BaseModel):
+    query: str = "light rock playlist"

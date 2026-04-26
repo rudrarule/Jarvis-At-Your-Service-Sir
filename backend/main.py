@@ -5,7 +5,7 @@ from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, PlainTextResponse
 
-from models.chat_model import ChatRequest, ChatResponse, TTSRequest
+from models.chat_model import ChatRequest, ChatResponse, TTSRequest, MusicRequest
 from services.llm_service import generate_response
 from services.memory_service import get_all_memories, clear_all_memories
 from services import text_to_speech_service
@@ -16,6 +16,7 @@ from services.whatsapp_service import (
     is_user_allowed,
     BUSY_RESPONSE,
 )
+from services import whatsapp_baileys_service as wa_baileys
 
 
 @asynccontextmanager
@@ -136,6 +137,84 @@ async def wipe_memory():
     return {"status": "Memory wiped, sir. Starting fresh."}
 
 
+# ── Stark Protocol Orchestration ──────────────────────────
+
+@app.get("/stark-protocol/briefing")
+async def stark_briefing():
+    import datetime
+    import re
+    from tools.weather_tool import get_weather
+    from services.whatsapp_baileys_service import get_unread_summary, get_missed_calls
+
+    hour = datetime.datetime.now().hour
+    if hour < 12:
+        greeting = "Good morning, sir."
+    elif hour < 18:
+        greeting = "Good afternoon, sir."
+    else:
+        greeting = "Good evening, sir."
+
+    # Schedule / Priority
+    calendar_text = "One meeting is scheduled for 3 PM."
+    
+    # Communications
+    unread_data = await get_unread_summary()
+    missed_data = await get_missed_calls()
+    
+    unread_count = unread_data.get("total_messages", 0) if isinstance(unread_data, dict) else 0
+    missed_calls = missed_data.get("count", 0) if isinstance(missed_data, dict) else 0
+    
+    comm_bullets = []
+    if missed_calls > 0:
+        comm_bullets.append(f"You have {missed_calls} missed call{'s' if missed_calls > 1 else ''} that may need attention.")
+    if unread_count > 0:
+        comm_bullets.append(f"You have {unread_count} unread message{'s' if unread_count > 1 else ''}.")
+        
+    if not comm_bullets:
+        comm_text = "No urgent messages need attention."
+    else:
+        comm_text = " ".join(comm_bullets)
+
+    # Environment
+    raw_weather = get_weather("") 
+    temp_match = re.search(r"([+-]?\d+)[°]?[CF]", raw_weather, re.IGNORECASE)
+    
+    if temp_match:
+        temp = int(temp_match.group(1))
+        if temp < 20:
+            weather_text = f"It is quite cold outside at {temp} degrees."
+        elif temp > 30:
+            weather_text = f"It is quite warm outside at {temp} degrees."
+        else:
+            weather_text = f"It is pleasant outside at {temp} degrees."
+    else:
+        weather_text = "Weather data is currently unavailable."
+
+    # Systems
+    system_text = "Systems are nominal."
+
+    bullets = [calendar_text, comm_text, weather_text, system_text]
+    
+    spoken_text = f"{greeting} Here is your priority brief. " + " ".join(bullets)
+    
+    display_bullets = "\n\n".join([f"• {b}" for b in bullets])
+    display_text = f"{greeting}\n\nHere is your priority brief.\n\n{display_bullets}"
+
+    return {
+        "text": spoken_text,
+        "spoken_text": spoken_text,
+        "display_text": display_text
+    }
+
+
+@app.post("/stark-protocol/music")
+async def stark_music(request: MusicRequest = None):
+    from tools.music_tool import play_music
+    query = request.query if request else "light rock playlist"
+    title, url = play_music(query)
+    return {"title": title, "url": url}
+
+
 # ── WhatsApp Integration (Twilio Webhook) ─────────────────
 
 @app.post("/whatsapp")
@@ -200,3 +279,57 @@ async def whatsapp_status():
         "busy_mode": is_busy(),
         "auto_response": BUSY_RESPONSE if is_busy() else None,
     }
+
+
+# ── WhatsApp Baileys Connector Integration ─────────────────
+
+@app.get("/wa/health")
+async def wa_connector_health():
+    """Check if the Baileys WhatsApp connector is alive."""
+    return await wa_baileys.connector_health()
+
+
+@app.get("/wa/unread")
+async def wa_unread():
+    """Fetch unread WhatsApp messages from Baileys connector."""
+    return await wa_baileys.get_unread_summary()
+
+
+@app.get("/wa/missed-calls")
+async def wa_missed_calls(since: int = None):
+    """Fetch missed WhatsApp call events."""
+    return await wa_baileys.get_missed_calls(since)
+
+
+@app.post("/wa/send")
+async def wa_send_message(chat_id: str = Form(...), text: str = Form(...)):
+    """Send a WhatsApp message via the Baileys connector."""
+    return await wa_baileys.send_whatsapp_message(chat_id, text)
+
+
+@app.get("/wa/briefing")
+async def wa_briefing():
+    """
+    Get a raw WhatsApp briefing for Jarvis to summarize.
+    Use this when the user asks 'who messaged me?' or 'any missed calls?'
+    """
+    briefing = await wa_baileys.get_whatsapp_briefing()
+    return {"briefing": briefing}
+
+
+@app.get("/wa/connection")
+async def wa_connection():
+    """Get the Baileys connector's current connection state."""
+    return await wa_baileys.get_connection_state()
+
+
+@app.post("/wa/clear-unread")
+async def wa_clear_unread(chat_id: str = Form(None)):
+    """Clear unread messages, optionally for a specific chat."""
+    return await wa_baileys.clear_unread(chat_id)
+
+
+@app.post("/wa/clear-calls")
+async def wa_clear_calls():
+    """Clear all missed call records."""
+    return await wa_baileys.clear_missed_calls()
