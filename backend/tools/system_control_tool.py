@@ -25,6 +25,18 @@ ALLOWED_APPS = {
     "discord": r"C:\Users\Rudra\AppData\Local\Discord\app-1.0.9016\Discord.exe",
 }
 
+# UWP / Microsoft Store apps (name → shell launch command)
+STORE_APPS = {
+    "netflix": "shell:AppsFolder\\4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App",
+    "whatsapp": "whatsapp:",
+    "telegram": "tg:",
+    "xbox": "xbox:",
+    "photos": "ms-photos:",
+    "settings": "ms-settings:",
+    "store": "ms-windows-store:",
+    "maps": "bingmaps:",
+}
+
 # Safe folder mappings (friendly name → absolute path)
 SAFE_DIRS = {
     "desktop": os.path.join(os.path.expanduser("~"), "Desktop"),
@@ -79,13 +91,20 @@ def find_process_by_name(app_name: str) -> psutil.Process:
 def open_app(app_name: str) -> str:
     """
     Open a whitelisted application.
-    Uses subprocess.Popen without shell=True for security.
+    Supports both traditional exe apps and UWP/Store apps via protocol URIs.
     """
     try:
         app_lower = app_name.lower().strip()
 
+        # Check UWP/Store apps first (protocol URI)
+        if app_lower in STORE_APPS:
+            protocol = STORE_APPS[app_lower]
+            os.startfile(protocol)
+            display_name = app_name.title()
+            return f"Opening {display_name}, sir."
+
         if app_lower not in ALLOWED_APPS:
-            available = ", ".join(ALLOWED_APPS.keys())
+            available = ", ".join(list(ALLOWED_APPS.keys()) + list(STORE_APPS.keys()))
             return f"I'm sorry, sir. '{app_name}' is not in my allowed applications list. Available: {available}."
 
         app_path = ALLOWED_APPS[app_lower]

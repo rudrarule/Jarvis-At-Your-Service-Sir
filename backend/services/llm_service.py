@@ -2,9 +2,9 @@
 llm_service.py — 3-Tier Local LLM Router
 =========================================
 Tier 1: Regex Fast-Path     (0ms)    — instant pattern matching for common commands
-Tier 2: Intent Classifier   (~200ms) — gemma3 classifies intent into a category
-Tier 3: Pruned Tool Router  (~2-4s)  — llama3.1 picks the exact tool from 2-3 schemas
-Fallback: Conversational    (~2s)    — gemma3 responds naturally
+Tier 2: Intent Classifier   (~200ms) — llama3.2:1b classifies intent into a category
+Tier 3: Pruned Tool Router  (~2-4s)  — qwen3.5:4b picks the exact tool from 2-3 schemas
+Fallback: Conversational    (~2s)    — llama3.2:1b responds naturally
 
 No external API dependencies. 100% local via Ollama.
 """
@@ -18,8 +18,8 @@ from tools.registry import TOOL_SCHEMAS, TOOL_GROUPS, get_schemas_for_intent, ex
 
 # ── Ollama Config ─────────────────────────────────────────
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_ROUTER_MODEL = "llama3.1:latest"    # Tier 3: Tool router (heavy, accurate)
-OLLAMA_CHAT_MODEL = "gemma3:latest"        # Tier 2 + Chat: Fast classifier & conversationalist
+OLLAMA_ROUTER_MODEL = "qwen3.5:4b"         # Tier 3: Tool router (heavy, accurate, native tools)
+OLLAMA_CHAT_MODEL = "llama3.2:1b"          # Tier 2 + Chat: Fast classifier & conversationalist
 
 
 # ── System Prompts ────────────────────────────────────────
@@ -77,8 +77,8 @@ async def _tier1_regex(msg: str) -> str | None:
         print(f"[TIER 1] Regex -> play_music: {song}")
         return await execute_tool("play_music", {"query": song})
     
-    # 2. Open App — "open chrome", "launch spotify"
-    app_match = re.match(r"^(?:open|launch|start)\s+(chrome|spotify|vscode|notepad|firefox|edge|discord|calc|terminal|explorer)$", msg_clean)
+    # 2. Open App — "open chrome", "launch spotify", "open netflix"
+    app_match = re.match(r"^(?:open|launch|start)\s+(chrome|spotify|vscode|notepad|firefox|edge|discord|calc|terminal|explorer|netflix|whatsapp|telegram|xbox|photos|settings|store|maps)[.!?,]*$", msg_clean)
     if app_match:
         app = app_match.group(1)
         print(f"[TIER 1] Regex -> open_app: {app}")
@@ -91,6 +91,38 @@ async def _tier1_regex(msg: str) -> str | None:
         print(f"[TIER 1] Regex -> close_app: {app}")
         return await execute_tool("close_app", {"app_name": app})
     
+    # 3b. Open Website — "open youtube", "go to github"
+    WEBSITE_SHORTCUTS = {
+        "youtube": "https://www.youtube.com",
+        "google": "https://www.google.com",
+        "github": "https://github.com",
+        "gmail": "https://mail.google.com",
+        "reddit": "https://www.reddit.com",
+        "twitter": "https://twitter.com",
+        "x": "https://x.com",
+        "instagram": "https://www.instagram.com",
+        "facebook": "https://www.facebook.com",
+        "linkedin": "https://www.linkedin.com",
+        "chatgpt": "https://chat.openai.com",
+        "whatsapp web": "https://web.whatsapp.com",
+        "amazon": "https://www.amazon.in",
+        "flipkart": "https://www.flipkart.com",
+        "stackoverflow": "https://stackoverflow.com",
+    }
+    url_match = re.match(r"^(?:open|go to|launch|visit|navigate to)\s+(.+?)(?:\.com|\.in|\.org|\.net)?[.!?,]*$", msg_clean)
+    if url_match:
+        site = re.sub(r"[.!?,]+$", "", url_match.group(1).strip()).lower()
+        if site in WEBSITE_SHORTCUTS:
+            url = WEBSITE_SHORTCUTS[site]
+            print(f"[TIER 1] Regex -> open_url: {url}")
+            return await execute_tool("open_url", {"url": url})
+        # Also handle explicit URLs like "open google.com"
+        raw_url = re.sub(r"^(?:open|go to|launch|visit|navigate to)\s+", "", msg_clean).strip()
+        raw_url = re.sub(r"[.!?,]+$", "", raw_url)  # strip trailing punctuation
+        if "." in raw_url and len(raw_url.split(".")[-1]) >= 2:
+            print(f"[TIER 1] Regex -> open_url: {raw_url}")
+            return await execute_tool("open_url", {"url": raw_url})
+
     # 4. Open Folder — "open downloads", "open desktop"
     folder_match = re.match(r"^open\s+(desktop|downloads|documents|pictures|workspace)$", msg_clean)
     if folder_match:
@@ -128,7 +160,7 @@ async def _tier1_regex(msg: str) -> str | None:
 async def _tier2_classify(msg: str) -> str:
     """Use gemma3 to classify user intent into a category. Returns intent label."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{OLLAMA_URL}/api/chat",
                 json={
@@ -138,6 +170,8 @@ async def _tier2_classify(msg: str) -> str:
                         {"role": "user", "content": msg},
                     ],
                     "stream": False,
+                    "options": {"num_ctx": 4096, "num_predict": 512},
+                    "keep_alive": "5m",
                 },
             )
             response.raise_for_status()
@@ -184,6 +218,8 @@ async def _tier3_route(msg: str, intent: str, chat_history: list, system_prompt:
                     "messages": messages,
                     "tools": pruned_schemas,
                     "stream": False,
+                    "options": {"num_ctx": 4096, "num_predict": 512},
+                    "keep_alive": "5m",
                 },
             )
             response.raise_for_status()
@@ -245,6 +281,8 @@ async def _chat_response(chat_history: list, memory_context: str) -> str:
                     "model": OLLAMA_CHAT_MODEL,
                     "messages": messages,
                     "stream": False,
+                    "options": {"num_ctx": 4096, "num_predict": 512},
+                    "keep_alive": "5m",
                 },
             )
             response.raise_for_status()
@@ -262,8 +300,8 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
     
     1. Store & retrieve memory
     2. Tier 1: Regex fast-path (0ms)
-    3. Tier 2: Intent classify via gemma3 (~200ms)
-    4. Tier 3: Pruned tool route via llama3.1 (~2-4s)  OR  Chat via gemma3 (~2s)
+    3. Tier 2: Intent classify via llama3.2:1b (~200ms)
+    4. Tier 3: Pruned tool route via qwen3.5:4b (~2-4s)  OR  Chat via llama3.2:1b (~2s)
     """
     from services.session_service import append_message, get_session_history
 
@@ -288,7 +326,7 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
     
     # ── Branch: CHAT -> skip tool routing entirely ──
     if intent == "CHAT":
-        print("[ROUTE] Intent=CHAT -> direct to gemma3")
+        print("[ROUTE] Intent=CHAT -> direct to llama3.2:1b")
         chat_history = get_session_history(session_id)
         reply = await _chat_response(chat_history, memory_context)
         append_message(session_id, "assistant", reply)

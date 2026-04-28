@@ -104,6 +104,7 @@ export function useJarvisWake(
   const [isBooting, setIsBooting] = useState(false);
   const [isListeningMusic, setIsListeningMusic] = useState(false);
   const cooldownRef = useRef(false);
+  const hasBriefedRef = useRef(false);  // Track if briefing already delivered this session
   const toggleListeningRef = useRef(toggleListening);
   const isListeningRef = useRef(isListening);
 
@@ -138,10 +139,29 @@ export function useJarvisWake(
     if (cooldownRef.current) return;
     cooldownRef.current = true;
 
-    console.log("🚀 Stark Protocol Initiated!");
-
     // Stop wake detector
     wakeRef.current.stop();
+
+    // ── Subsequent wake: just activate mic ──
+    if (hasBriefedRef.current) {
+      console.log("🎙️ Wake detected (already briefed) — activating mic");
+      playStartupChime();
+      await speakWithPromise("Yes, sir?");
+
+      // Activate main speech recognition
+      if (!isListeningRef.current) {
+        toggleListeningRef.current();
+      }
+
+      setTimeout(() => {
+        cooldownRef.current = false;
+      }, 1000);
+      return;
+    }
+
+    // ── First wake: full Stark Protocol ──
+    console.log("🚀 Stark Protocol Initiated!");
+    hasBriefedRef.current = true;
 
     // 1. Play startup chime
     playStartupChime();

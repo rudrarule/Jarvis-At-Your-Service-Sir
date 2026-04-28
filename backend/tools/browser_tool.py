@@ -202,6 +202,7 @@ async def open_url(url: str) -> str:
     print(f"[URL] Opening: {url}")
 
     import threading
+    from urllib.parse import urlparse
 
     def run_browser():
         """Run browser in thread."""
@@ -210,7 +211,14 @@ async def open_url(url: str) -> str:
     thread = threading.Thread(target=run_browser, daemon=True)
     thread.start()
 
-    return f"Opening {url} in browser, sir."
+    # Extract a friendly name for TTS (e.g., "youtube" from "https://www.youtube.com")
+    try:
+        hostname = urlparse(url).hostname or url
+        friendly = hostname.replace("www.", "").split(".")[0].title()
+    except Exception:
+        friendly = url
+
+    return f"Opening {friendly}, sir."
 
 
 async def _open_direct_url(url: str):
