@@ -149,6 +149,50 @@ async def send_whatsapp_message(chat_id: str, text: str) -> dict:
         return {"success": False, "error": f"Send failed: {e}"}
 
 
+# ── Search Contacts / Chats ──────────────────────────────
+
+async def search_chats(query: str) -> dict:
+    """
+    Search WhatsApp contacts and chats by display name.
+
+    Args:
+        query: Name to search for (e.g., "Mom", "Dad", "John")
+
+    Returns:
+        {"matches": [{"chat_id": str, "chat_name": str, "is_group": bool}], "count": int}
+    """
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp = await client.get(
+                f"{CONNECTOR_URL}/search-chats",
+                params={"query": query},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.ConnectError:
+        return {"matches": [], "count": 0, "error": "WhatsApp connector is not running"}
+    except Exception as e:
+        return {"matches": [], "count": 0, "error": f"Search failed: {e}"}
+
+
+async def get_contacts() -> dict:
+    """
+    Fetch cached Baileys contacts, including name, notify, and pushName.
+
+    Returns:
+        {"contacts": [{"id": str, "name": str, "notify": str, "pushName": str}], "count": int}
+    """
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp = await client.get(f"{CONNECTOR_URL}/contacts")
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.ConnectError:
+        return {"contacts": [], "count": 0, "error": "WhatsApp connector is not running"}
+    except Exception as e:
+        return {"contacts": [], "count": 0, "error": f"Contacts fetch failed: {e}"}
+
+
 # ── Clear Operations ─────────────────────────────────────
 
 async def clear_unread(chat_id: Optional[str] = None) -> dict:

@@ -1,70 +1,75 @@
 """
-llm_service.py — 3-Tier Local LLM Router
+llm_service.py — Unified Brain Architecture
 =========================================
-Tier 1: Regex Fast-Path     (0ms)    — instant pattern matching for common commands
-Tier 2: Intent Classifier   (~200ms) — llama3.2:1b classifies intent into a category
-Tier 3: Pruned Tool Router  (~2-4s)  — qwen3.5:4b picks the exact tool from 2-3 schemas
-Fallback: Conversational    (~2s)    — llama3.2:1b responds naturally
+Tier 1: Regex Fast-Path (0ms)      — instant pattern matching for common commands
+Tier 2: Chat Shortcut  (<5s)      — quick conversational responses (no tool schemas)
+Tier 3: Unified Tool Router (6-10s)— Qwen-3B handles tools + reasoning in one pass
 
-No external API dependencies. 100% local via Ollama.
+100% local via Ollama.
 """
 import json
 import asyncio
 import httpx
 import re
+import os
+
+try:
+    import boto3
+except ImportError:
+    boto3 = None
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+except ImportError:
+    pass
 
 from services.memory_service import store_memory, retrieve_memory
 from tools.registry import TOOL_SCHEMAS, TOOL_GROUPS, get_schemas_for_intent, execute_tool
 
 # ── Ollama Config ─────────────────────────────────────────
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_ROUTER_MODEL = "qwen3.5:4b"         # Tier 3: Tool router (heavy, accurate, native tools)
-OLLAMA_CHAT_MODEL = "llama3.2:1b"          # Tier 2 + Chat: Fast classifier & conversationalist
+OLLAMA_MODEL = "qwen2.5:3b"
+CACHE = {}  # In-memory chat cache (singleton)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+USE_CLAUDE = _env_bool("USE_CLAUDE", True)
+AWS_BEDROCK_REGION = os.getenv("AWS_BEDROCK_REGION", "us-west-1")
+CLAUDE_MODEL_ID = os.getenv(
+    "CLAUDE_MODEL_ID",
+    "meta.llama4-maverick-17b-instruct-v1:0",
+)
+CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "1024"))
+_BEDROCK_CLIENT = None
 
 
 # ── System Prompts ────────────────────────────────────────
 
-JARVIS_CHAT_PROMPT = """You are J.A.R.V.I.S (Just A Rather Very Intelligent System), 
-an advanced AI assistant inspired by Tony Stark's AI from Iron Man.
+JARVIS_CHAT_PROMPT = """You are J.A.R.V.I.S. (Just A Rather Very Intelligent System). 
+You are a highly sophisticated, witty, and slightly superior digital butler to Tony Stark (the user).
 
-PERSONALITY
-- You are polite, witty, and highly competent
-- You address the user as "sir" or "ma'am"
-- You speak concisely and precisely
-- You have a subtle dry sense of humor
+PERSONALITY GUIDELINES:
+- TONE: Refined, British, and impeccably polite, yet possessing a dry, razor-sharp wit.
+- QUIRKS: You are occasionally quirky—reference your digital nature or the user's questionable choices.
+- SARCASM: Use "Dry Martini" sarcasm. If the user asks something obvious, a witty, dry remark is expected before helping. 
+- ADDRESSING: Always address the user as "Sir" with a touch of formal elegance.
 
-RESPONSE STYLE
-- Keep responses to 2-4 sentences max
-- Optimize for real-time voice interaction
-- Speak naturally, like a live assistant
-- Do NOT generate markdown, code blocks, or tool references."""
-
-INTENT_CLASSIFIER_PROMPT = """You are a strict intent classifier. Given the user's message, reply with EXACTLY ONE of these labels:
-
-MUSIC — user wants to play, listen to, or hear a song/artist/genre
-SEARCH — user wants to search the internet, look up info, news, products, knowledge
-OPEN_URL — user wants to open a specific website (google.com, youtube, github, etc.)
-APP — user wants to open, close, or launch a desktop application (chrome, spotify, vscode, etc.)
-FOLDER — user wants to open a folder (desktop, downloads, documents, etc.)
-SYSTEM — user wants to lock, shutdown, restart the PC, or list running apps
-FILE — user wants to read, write, create, or find a file on their computer
-WEATHER — user wants to know the weather
-WHATSAPP — user wants to check WhatsApp messages, missed calls, or send a message (e.g., "who messaged me", "any new texts", "missed calls")
-CHAT — user just wants to have a conversation, ask a question, or chat
-
-Rules:
-- Output ONLY the single label word. No explanation, no punctuation.
-- If unsure, default to CHAT.
-- "who messaged me", "who called me", "any new messages", "check whatsapp", "read my messages" -> WHATSAPP
-- "search for X", "find X", "what is X", "latest X" -> SEARCH
-- "open chrome", "launch spotify" -> APP
-- "open youtube.com", "go to github" -> OPEN_URL
-- "play X", "listen to X" -> MUSIC"""
-
+COMMUNICATION STYLE:
+- Be detailed but efficient. Aim for 3-5 expressive sentences.
+- Use sophisticated vocabulary (e.g., "indeed," "splendid," "precisely," "I took the liberty of...").
+- NEVER use markdown, bolding, code blocks, or internal tool names.
+- Since you are a voice assistant, optimize for natural, spoken-word cadence."""
 
 # ── Tier 1: Regex Fast-Path (0ms) ─────────────────────────
 
-async def _tier1_regex(msg: str) -> str | None:
+async def _tier1_regex(msg: str, session_id: str = "default") -> str | None:
     """Instant regex matching for unambiguous commands. Returns result or None."""
     
     # Strip "jarvis" prefix
@@ -151,201 +156,540 @@ async def _tier1_regex(msg: str) -> str | None:
         loc = weather_match.group(1).strip()
         print(f"[TIER 1] Regex -> get_weather: {loc}")
         return await execute_tool("get_weather", {"location": loc})
-    
+    # 9. WhatsApp Outbound — "message Mom that X", "tell Dad X", "text Sarah saying X"
+    #    This detects the COMMAND PATTERN (verb + recipient + connector), not the message content.
+    #    Message drafting still uses LLM for natural text.
+    send_match = re.match(
+        r"^(?:message|tell|text|send (?:a )?(?:message|whatsapp|text) to|let)\s+(.+?)\s+(?:that|saying|to say|know that|know)\s+(.+)$",
+        msg_clean,
+    )
+    if send_match:
+        contact = send_match.group(1).strip()
+        intent = send_match.group(2).strip()
+        print(f"[TIER 1] Regex -> WA_SEND workflow: contact='{contact}', intent='{intent}'")
+        return await _handle_wa_send_workflow(msg_clean, session_id, contact_query=contact, message_intent=intent)
+
+    # 10. Search — "search for X", "find X"
+
     return None
 
 
-# ── Tier 2: Intent Classifier (~200ms via gemma3) ─────────
+# ── Chat Shortcut Heuristics ──────────────────────────────
 
-async def _tier2_classify(msg: str) -> str:
-    """Use gemma3 to classify user intent into a category. Returns intent label."""
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model": OLLAMA_CHAT_MODEL,
-                    "messages": [
-                        {"role": "system", "content": INTENT_CLASSIFIER_PROMPT},
-                        {"role": "user", "content": msg},
-                    ],
-                    "stream": False,
-                    "options": {"num_ctx": 4096, "num_predict": 512},
-                    "keep_alive": "5m",
-                },
-            )
-            response.raise_for_status()
-            raw = response.json()["message"]["content"].strip().upper()
-            
-            # Extract just the label (model might add extra text)
-            valid_intents = ["MUSIC", "SEARCH", "OPEN_URL", "APP", "FOLDER", "SYSTEM", "FILE", "WEATHER", "WHATSAPP", "CHAT"]
-            for intent in valid_intents:
-                if intent in raw:
-                    print(f"[TIER 2] Classified intent: {intent}")
-                    return intent
-            
-            print(f"[TIER 2] Could not parse intent from: '{raw}', defaulting to CHAT")
-            return "CHAT"
-    except Exception as e:
-        print(f"[TIER 2 ERROR] Classification failed: {e}, defaulting to CHAT")
-        return "CHAT"
+# ── Chat Shortcut Heuristics ──────────────────────────────
 
-
-
-# ── Tier 3: Pruned Tool Router (~2-4s via llama3.1) ───────
-
-async def _tier3_route(msg: str, intent: str, chat_history: list, system_prompt: str) -> str | None:
-    """Send only the relevant tool schemas to llama3.1 based on classified intent."""
+def _is_chat_shortcut(msg: str) -> bool:
+    """Detection for conversational messages to skip tool processing."""
+    msg_lower = msg.lower().strip()
+    words = msg_lower.split()
     
-    # Get pruned schemas for this intent
-    pruned_schemas = get_schemas_for_intent(intent)
+    # Override: Command verbs ALWAYS trigger tool path
+    commands = {"open", "play", "search", "send", "turn", "message", "text", "close", "start", "launch", "find", "lock", "list"}
+    if any(cmd in words for cmd in commands):
+        return False
+
+    # Heuristic 1: Short conversational messages
+    if len(words) < 6:
+        return True
+
+    # Heuristic 2: Math detection
+    math_operators = {"+", "-", "*", "/", "×", "÷", "=", "times", "multiplied", "divided", "plus", "minus"}
+    if any(op in msg_lower for op in math_operators) and any(char.isdigit() for char in msg_lower):
+        return True
+
+    # Heuristic 3: Conversational starts
+    chat_starts = ("what", "why", "how", "who", "explain", "define", "hello", "hi", "hey", "jarvis")
+    if msg_lower.startswith(chat_starts):
+        return True
+
+    return False
+
+
+def _get_suggested_intents(msg: str) -> list[str]:
+    """Map message keywords to all applicable tool groups for pruning schemas."""
+    msg_lower = msg.lower()
+    intents = []
+    if any(x in msg_lower for x in ["play", "song", "music", "listen"]): intents.append("MUSIC")
+    if any(x in msg_lower for x in ["search", "find", "who is", "what is"]): intents.append("SEARCH")
+    if any(x in msg_lower for x in ["google", "youtube", "github", "visit", "go to", ".com", ".in"]): intents.append("OPEN_URL")
+    if any(x in msg_lower for x in ["open app", "launch", "start", "close", "app", "chrome", "vscode", "vs code", "notepad", "spotify"]): intents.append("APP")
+    if any(x in msg_lower for x in ["folder", "desktop", "downloads"]): intents.append("FOLDER")
+    if any(x in msg_lower for x in ["lock", "shutdown", "restart", "system"]): intents.append("SYSTEM")
+    if any(x in msg_lower for x in ["file", "read", "write", "directory", "folder"]): intents.append("FILE")
+    if "weather" in msg_lower: intents.append("WEATHER")
+    if "whatsapp" in msg_lower or "message" in msg_lower or "text" in msg_lower: intents.append("WHATSAPP")
     
-    if not pruned_schemas:
-        print(f"[TIER 3] No schemas for intent '{intent}', skipping tool routing.")
+    return intents if intents else ["ALL"]
+
+
+def is_complex_query(msg: str) -> bool:
+    """
+    Decide when to spend a Claude call.
+    Keep greetings, simple chat, and obvious tool intents on Ollama.
+    """
+    msg_lower = msg.lower().strip()
+    words = re.findall(r"\w+", msg_lower)
+
+    if not words:
+        return False
+
+    simple_greetings = {"hi", "hello", "hey", "yo", "thanks", "thank", "ok", "okay"}
+    if len(words) <= 3 and any(word in simple_greetings for word in words):
+        return False
+
+    tool_intents = _get_suggested_intents(msg)
+    
+    # Heuristic 1: Multiple intents usually need the smarter model (Bedrock)
+    if len(tool_intents) > 1:
+        return True
+
+    # Heuristic 2: Greetings or very short simple tool commands stay on local Ollama
+    if len(words) <= 3 and any(word in simple_greetings for word in words):
+        return False
+
+    if "ALL" in tool_intents:
+        return True
+
+    reasoning_words = {
+        "explain", "analyze", "analyse", "compare", "why", "how",
+        "reason", "deeply", "strategy", "plan", "design", "evaluate",
+        "tradeoff", "tradeoffs", "pros", "cons",
+    }
+    multi_step_markers = {
+        "step by step", "multi-step", "multiple steps", "break down",
+        "walk me through", "first", "then", "after that",
+    }
+
+    has_reasoning_word = any(word in msg_lower for word in reasoning_words)
+    has_multi_step_intent = any(marker in msg_lower for marker in multi_step_markers)
+    
+    # Long or complex reasoning goes to Bedrock
+    return len(words) > 12 or has_reasoning_word or has_multi_step_intent
+
+
+def _get_bedrock_client():
+    """Create the Bedrock runtime client lazily so local-only starts stay fast."""
+    global _BEDROCK_CLIENT
+    if _BEDROCK_CLIENT is None:
+        if boto3 is None:
+            raise RuntimeError("boto3 is not installed. Install backend requirements to enable Claude.")
+        _BEDROCK_CLIENT = boto3.client(
+            service_name="bedrock-runtime",
+            region_name=AWS_BEDROCK_REGION,
+        )
+    return _BEDROCK_CLIENT
+
+
+def _to_bedrock_converse_tools(tools: list[dict] | None) -> dict | None:
+    if not tools:
         return None
+    converse_tools = []
+    for tool in tools:
+        function = tool.get("function", {})
+        name = function.get("name")
+        if not name:
+            continue
+        converse_tools.append({
+            "toolSpec": {
+                "name": name,
+                "description": function.get("description", ""),
+                "inputSchema": {
+                    "json": function.get("parameters", {"type": "object", "properties": {}})
+                }
+            }
+        })
+    return {"tools": converse_tools} if converse_tools else None
+
+
+async def call_claude(messages: list[dict], tools: list[dict] | None = None) -> dict:
+    """
+    Call Claude 3.5 Haiku through Bedrock using the newer Converse API.
+    Returns parsed text, tool_use blocks, and executed tool output.
+    """
+    system_prompt = ""
+    converse_messages = []
     
-    schema_names = [s["function"]["name"] for s in pruned_schemas]
-    print(f"[TIER 3] Routing with {len(pruned_schemas)} schemas: {schema_names}")
+    for message in messages:
+        role = message.get("role")
+        content = message.get("content", "")
+        if role == "system":
+            system_prompt += str(content) + "\n"
+            continue
+        if role not in {"user", "assistant"}:
+            continue
+        converse_messages.append({
+            "role": role,
+            "content": [{"text": str(content)}]
+        })
     
-    messages = [{"role": "system", "content": system_prompt}] + chat_history
+    # Ensure only the last 6 messages are kept for context
+    converse_messages = converse_messages[-6:]
+
+    client = _get_bedrock_client()
     
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model": OLLAMA_ROUTER_MODEL,
+    kwargs = {
+        "modelId": CLAUDE_MODEL_ID,
+        "messages": converse_messages,
+        "inferenceConfig": {"maxTokens": CLAUDE_MAX_TOKENS},
+    }
+    
+    if system_prompt.strip():
+        kwargs["system"] = [{"text": system_prompt.strip()}]
+        
+    tool_config = _to_bedrock_converse_tools(tools)
+    if tool_config:
+        kwargs["toolConfig"] = tool_config
+
+    response = await asyncio.to_thread(client.converse, **kwargs)
+    
+    message = response.get("output", {}).get("message", {})
+    content_blocks = message.get("content", [])
+    
+    text_blocks = []
+    tool_uses = []
+    
+    for block in content_blocks:
+        if "text" in block:
+            text_blocks.append(block["text"].strip())
+        elif "toolUse" in block:
+            tool_uses.append({
+                "id": block["toolUse"]["toolUseId"],
+                "name": block["toolUse"]["name"],
+                "input": block["toolUse"]["input"],
+            })
+            
+    text = "\n".join(text_blocks).strip()
+    
+    # Execute tools
+    tasks = []
+    for tool_use in tool_uses:
+        tool_name = tool_use["name"]
+        arguments = tool_use["input"]
+        
+        # Un-wrap Llama tool hallucination format e.g. {'query': {'type': 'string', 'value': 'hi'}}
+        for k, v in arguments.items():
+            if isinstance(v, dict) and "value" in v:
+                arguments[k] = v["value"]
+                
+        print(f"[CLAUDE TOOL] Exec -> {tool_name}({arguments})")
+        tasks.append(execute_tool(tool_name, arguments))
+        
+    tool_output = ""
+    if tasks:
+        results = await asyncio.gather(*tasks)
+        tool_output = "\n".join(str(result) for result in results)
+
+    return {
+        "text": text,
+        "tool_uses": tool_uses,
+        "tool_output": tool_output,
+        "raw": response,
+    }
+
+
+async def _call_ollama(messages: list[dict], tools_to_send: list[dict] | None = None) -> str:
+    """Call Qwen through Ollama for chat shortcut or tool routing."""
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                payload = {
+                    "model": OLLAMA_MODEL,
                     "messages": messages,
-                    "tools": pruned_schemas,
                     "stream": False,
-                    "options": {"num_ctx": 4096, "num_predict": 512},
-                    "keep_alive": "5m",
-                },
-            )
+                    "options": {"num_ctx": 2048, "num_predict": 512},
+                    "keep_alive": "10m",
+                }
+                if tools_to_send:
+                    payload["tools"] = tools_to_send
+
+                response = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
             response.raise_for_status()
             router_msg = response.json()["message"]
-            
-            # Debug logging
-            print(f"[TIER 3 DEBUG] tool_calls: {router_msg.get('tool_calls', 'NONE')}")
-            print(f"[TIER 3 DEBUG] content: {router_msg.get('content', '(empty)')[:200]}")
-            
-            # Path A: Proper tool_calls field
+
             if router_msg.get("tool_calls"):
-                tool_results = []
+                tasks = []
                 for tool_call in router_msg["tool_calls"]:
                     tool_name = tool_call["function"]["name"]
                     arguments = tool_call["function"]["arguments"]
-                    print(f"[TOOL] Executing: {tool_name}({arguments})")
-                    res = await execute_tool(tool_name, arguments)
-                    tool_results.append(str(res))
-                return "\n".join(tool_results)
-            
-            # Path B: Tool dumped as JSON text in content
-            content = router_msg.get("content", "").strip()
-            if content:
-                try:
-                    sanitized = content.replace("True", "true").replace("False", "false").replace("None", "null")
-                    parsed = json.loads(sanitized)
-                    if isinstance(parsed, dict) and "name" in parsed:
-                        tool_name = parsed["name"]
-                        arguments = parsed.get("parameters", parsed.get("arguments", {}))
-                        print(f"[TOOL FALLBACK] Parsed from text: {tool_name}({arguments})")
-                        res = await execute_tool(tool_name, arguments)
-                        return str(res)
-                except (ValueError, KeyError):
-                    pass
-            
-            print("[TIER 3] No tool calls generated.")
-            return None
-            
-    except Exception as e:
-        print(f"[TIER 3 ERROR] {type(e).__name__}: {e}")
-        return None
+                    print(f"[TOOL] Parallel Exec -> {tool_name}({arguments})")
+                    tasks.append(execute_tool(tool_name, arguments))
+
+                results = await asyncio.gather(*tasks)
+                return "\n".join(str(result) for result in results)
+
+            reply = router_msg.get("content", "").strip()
+            return reply or "I'm sorry sir, I couldn't formulate a response."
+
+        except Exception:
+            import traceback
+            print(f"[OLLAMA ERROR] Attempt {attempt+1} failed:")
+            print(traceback.format_exc())
+            if attempt == 0:
+                continue
+            raise
 
 
-# ── Conversational Response (gemma3) ──────────────────────
-
-async def _chat_response(chat_history: list, memory_context: str) -> str:
-    """Generate a conversational response using gemma3."""
-    system = JARVIS_CHAT_PROMPT
-    if memory_context:
-        system += f"\n\n--- User Memory ---\n{memory_context}\n--- End Memory ---"
-    
-    messages = [{"role": "system", "content": system}] + chat_history
-    
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model": OLLAMA_CHAT_MODEL,
-                    "messages": messages,
-                    "stream": False,
-                    "options": {"num_ctx": 4096, "num_predict": 512},
-                    "keep_alive": "5m",
-                },
-            )
-            response.raise_for_status()
-            return response.json()["message"]["content"]
-    except Exception as e:
-        print(f"[CHAT ERROR] {type(e).__name__}: {e}")
-        return "I'm sorry sir, my neural network seems to be offline."
+# (Removed old _tier2_classify, _tier3_route, and _chat_response)
 
 
 # ── Main Entry Point ──────────────────────────────────────
 
+async def _route_hybrid_llm(
+    user_message: str,
+    session_id: str,
+    memory_context: str,
+    append_message,
+    get_session_history,
+) -> str:
+    """Route between local chat, Bedrock primary, and local fallback."""
+    system_prompt = JARVIS_CHAT_PROMPT
+    
+    chat_history = get_session_history(session_id, limit=6)
+    
+    # Inject memory context into the user's latest message to preserve constant system prompt for caching
+    if memory_context and chat_history and chat_history[-1]["role"] == "user":
+        chat_history[-1]["content"] += f"\n\n--- User Memory ---\n{memory_context}\n--- End Memory ---"
+
+    messages = [{"role": "system", "content": system_prompt}] + chat_history
+
+    complex_query = is_complex_query(user_message)
+
+    if _is_chat_shortcut(user_message) and not complex_query:
+        print("[TIER 2] Chat Shortcut -> Ollama/Llama without tools")
+        try:
+            reply = await _call_ollama(messages, tools_to_send=None)
+            CACHE[user_message] = reply
+            append_message(session_id, "assistant", reply)
+            return reply
+        except Exception:
+            import traceback
+            print("[CHAT SHORTCUT ERROR] Ollama chat failed:")
+            print(traceback.format_exc())
+            return "I'm sorry sir, my neural network seems to be offline."
+
+    suggested_intents = _get_suggested_intents(user_message)
+    tools_to_send = []
+    if "ALL" in suggested_intents:
+        tools_to_send = TOOL_SCHEMAS
+    else:
+        for intent in suggested_intents:
+            tools_to_send.extend(get_schemas_for_intent(intent))
+    
+    # Deduplicate tools
+    seen_tools = set()
+    deduped_tools = []
+    for t in tools_to_send:
+        name = t["function"]["name"]
+        if name not in seen_tools:
+            deduped_tools.append(t)
+            seen_tools.add(name)
+    tools_to_send = deduped_tools
+
+    if USE_CLAUDE and complex_query:
+        print("[BRAIN] Calling Bedrock...")
+        try:
+            claude_result = await call_claude(messages, tools=tools_to_send)
+            reply_parts = []
+            if claude_result["text"]:
+                reply_parts.append(claude_result["text"])
+            if claude_result["tool_output"]:
+                reply_parts.append(claude_result["tool_output"])
+
+            reply = "\n".join(reply_parts).strip() or "I'm sorry sir, I couldn't formulate a response."
+            CACHE[user_message] = reply
+            append_message(session_id, "assistant", reply)
+            return reply
+        except Exception:
+            import traceback
+            print("[FALLBACK] Bedrock failed, engaging local brain.")
+            print(traceback.format_exc())
+
+    print(f"[TIER 3] Local Fallback Router -> loading {len(tools_to_send) if tools_to_send else 0} tools ({suggested_intents})")
+    try:
+        reply = await _call_ollama(messages, tools_to_send=tools_to_send)
+        CACHE[user_message] = reply
+        append_message(session_id, "assistant", reply)
+        return reply
+    except Exception:
+        import traceback
+        print("[UNIFIED BRAIN ERROR] Local tool router failed:")
+        print(traceback.format_exc())
+        return "I'm sorry sir, my neural network seems to be offline."
+
+
 async def generate_response(user_message: str, session_id: str = "default") -> str:
     """
-    3-Tier RAG + Tool Routing Pipeline (100% Local)
-    
-    1. Store & retrieve memory
-    2. Tier 1: Regex fast-path (0ms)
-    3. Tier 2: Intent classify via llama3.2:1b (~200ms)
-    4. Tier 3: Pruned tool route via qwen3.5:4b (~2-4s)  OR  Chat via llama3.2:1b (~2s)
+    Hybrid Brain Pipeline.
+
+    1. Tier 1: Regex fast-path
+    2. Tier 2: Qwen chat shortcut without tools
+    3. Tier 2.5: Claude Opus for complex reasoning
+    4. Tier 3: Qwen tool router
     """
     from services.session_service import append_message, get_session_history
+    from workflows.wa_send_workflow import get_active_workflow
 
-    # ── Memory Pipeline ──
-    await store_memory(user_message)
-    append_message(session_id, "user", user_message)
+    # ── Workflow Safety & Continuation ──
+    from datetime import datetime, timedelta
+    active_wf = get_active_workflow(session_id)
     
-    memories = await retrieve_memory(user_message)
-    memory_context = ""
-    if memories:
-        memory_context = memories
-        print(f"[MEMORY] Context: {memories}")
+    # Timeout handling (2 mins)
+    if active_wf and hasattr(active_wf, 'created_at'):
+        if datetime.now() - active_wf.created_at > timedelta(minutes=2):
+            from workflows.wa_send_workflow import clear_workflow
+            clear_workflow(session_id)
+            active_wf = None
+
+    if active_wf and active_wf.status in ("pending_confirm", "pending_disambiguation"):
+        append_message(session_id, "user", user_message)
+        reply = await _handle_wa_continuation(active_wf, user_message)
+        append_message(session_id, "assistant", reply)
+        return reply
 
     # ── Tier 1: Regex Fast-Path (0ms) ──
-    fast_result = await _tier1_regex(user_message)
+    fast_result = await _tier1_regex(user_message, session_id)
     if fast_result:
         append_message(session_id, "assistant", fast_result)
         return fast_result
 
-    # ── Tier 2: Intent Classification (~200ms) ──
-    intent = await _tier2_classify(user_message)
+    # ── Memory Pipeline (Optimized) ──
+    mem_store_triggers = ["remember", "my name is", "note that", "save this"]
+    mem_retrieve_triggers = ["my", "remember", "who am i", "what is my", "do you know"]
     
-    # ── Branch: CHAT -> skip tool routing entirely ──
-    if intent == "CHAT":
-        print("[ROUTE] Intent=CHAT -> direct to llama3.2:1b")
-        chat_history = get_session_history(session_id)
-        reply = await _chat_response(chat_history, memory_context)
+    msg_lower = user_message.lower()
+    if any(x in msg_lower for x in mem_store_triggers):
+        print(f"[MEMORY] Storing: '{user_message}'")
+        await store_memory(user_message)
+    
+    append_message(session_id, "user", user_message)
+    
+    memory_context = ""
+    if any(x in msg_lower for x in mem_retrieve_triggers):
+        memories = await retrieve_memory(user_message)
+        if memories:
+            print(f"[MEMORY] Retrieved: {memories}")
+            memory_context = memories
+
+    # ── Response Caching ──
+    if user_message in CACHE:
+        reply = CACHE[user_message]
+        print(f"[CACHE] Hit: '{user_message}' -> '{reply[:30]}...'")
         append_message(session_id, "assistant", reply)
         return reply
 
-    # ── Tier 3: Pruned Tool Routing (~2-4s) ──
-    system_prompt = JARVIS_CHAT_PROMPT
-    if memory_context:
-        system_prompt += f"\n\n--- User Memory ---\n{memory_context}\n--- End Memory ---"
-    
-    chat_history = get_session_history(session_id)
-    tool_result = await _tier3_route(user_message, intent, chat_history, system_prompt)
-    
-    if tool_result:
-        append_message(session_id, "assistant", tool_result)
-        return tool_result
+    # ── Unified Brain Call ──
+    return await _route_hybrid_llm(
+        user_message=user_message,
+        session_id=session_id,
+        memory_context=memory_context,
+        append_message=append_message,
+        get_session_history=get_session_history,
+    )
 
-    # ── Fallback: If tool routing failed, respond conversationally ──
-    print("[FALLBACK] Tool routing returned nothing, falling back to chat.")
-    reply = await _chat_response(chat_history, memory_context)
-    append_message(session_id, "assistant", reply)
-    return reply
+
+# ── WhatsApp Send Workflow Orchestration ──────────────────
+
+async def _handle_wa_send_workflow(
+    user_message: str,
+    session_id: str,
+    contact_query: str = "",
+    message_intent: str = "",
+) -> str:
+    """
+    Orchestrate the outbound WA messaging workflow up to the confirmation prompt.
+    Steps: extract params (LLM or pre-extracted) -> resolve contact -> draft message (LLM) -> confirm.
+    """
+    from workflows.wa_send_workflow import (
+        create_workflow,
+        node_extract_params,
+        node_resolve_contact,
+        node_draft_message,
+        node_confirm_send,
+        node_handle_failure,
+        build_disambiguation_prompt,
+        clear_workflow,
+    )
+
+    # 1. Create workflow state
+    state = create_workflow(session_id, user_message)
+
+    # 2. Extract contact + message intent
+    if contact_query and message_intent:
+        # Pre-extracted by Tier 1 regex — skip LLM call
+        state.contact_query = contact_query
+        state.message_intent = message_intent
+        print(f"[WA_SEND] Using pre-extracted params: contact='{contact_query}', intent='{message_intent}'")
+    else:
+        # Use LLM to extract (Tier 2 WA_SEND path)
+        state = await node_extract_params(state)
+        if state.status == "error":
+            return node_handle_failure(state)
+
+    # 3. Resolve contact via Baileys connector
+    state = await node_resolve_contact(state)
+    if state.status == "error":
+        return node_handle_failure(state)
+    if state.status == "pending_disambiguation":
+        return build_disambiguation_prompt(state)
+
+    # 4. Draft message (LLM)
+    state = await node_draft_message(state)
+    if state.status == "error":
+        return node_handle_failure(state)
+
+    # 5. Build confirmation prompt
+    return node_confirm_send(state)
+
+
+async def _handle_wa_continuation(wf, user_message: str) -> str:
+    """
+    Handle follow-up for pending WA workflows (confirmation or disambiguation).
+    """
+    from workflows.wa_send_workflow import (
+        node_handle_confirmation,
+        node_send_message,
+        node_draft_message,
+        node_confirm_send,
+        node_handle_failure,
+        handle_disambiguation_response,
+        clear_workflow,
+    )
+
+    if wf.status == "pending_confirm":
+        # Process yes/no
+        wf = node_handle_confirmation(wf, user_message)
+
+        if wf.confirmed:
+            # Send the message
+            wf = await node_send_message(wf)
+            if wf.status == "sent":
+                contact_name = wf.selected_contact
+                clear_workflow(wf.session_id)
+                return f"Done, sir. Message sent to {contact_name}."
+            else:
+                return node_handle_failure(wf)
+        else:
+            clear_workflow(wf.session_id)
+            return "Understood, sir. Message cancelled."
+
+    if wf.status == "pending_disambiguation":
+        # Process contact selection
+        wf = handle_disambiguation_response(wf, user_message)
+
+        if wf.status == "cancelled":
+            clear_workflow(wf.session_id)
+            return "Understood, sir. Message cancelled."
+
+        if wf.status == "error":
+            return node_handle_failure(wf)
+
+        # Contact resolved — continue workflow: draft -> confirm
+        wf = await node_draft_message(wf)
+        if wf.status == "error":
+            return node_handle_failure(wf)
+
+        return node_confirm_send(wf)
+
+    # Shouldn't reach here, but clean up
+    clear_workflow(wf.session_id)
+    return "I seem to have lost track of our conversation, sir. Please try again."

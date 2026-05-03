@@ -34,13 +34,17 @@ def get_weather(location: str) -> str:
             if "Unknown location" in result or result == "":
                 return f"I apologize, sir, but I could not find weather data for {location}."
             
-            # Clean up result for voice: strip emoji if possible or just return as is
-            # Some TTS engines struggle with emojis. 
-            # wttr.in format 3 is: "Location: Condition, Temp"
-            return f"Sir, the current weather for {result}."
+            # Clean up result for voice/console: strip emojis to avoid Unicode errors on Windows
+            result_safe = re.sub(r'[^\x00-\x7F]+', '', result).strip()
+            
+            return f"Sir, the current weather for {result_safe}."
         else:
             return "I'm having trouble accessing the weather service right now, sir."
             
     except Exception as e:
-        print(f"[ERROR] Weather fetch failed: {e}")
+        # Safe printing for Windows console
+        try:
+            print(f"[ERROR] Weather fetch failed: {e}")
+        except UnicodeEncodeError:
+            print("[ERROR] Weather fetch failed (Unicode error)")
         return "I apologize, sir, but I cannot reach the weather service at this moment."

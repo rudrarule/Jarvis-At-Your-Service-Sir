@@ -67,10 +67,11 @@ async function startConnection() {
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     logger,
-    printQRInTerminal: false, // We handle QR ourselves
+    printQRInTerminal: false,
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,
-    markOnlineOnConnect: false, // Don't mark as online (stealth)
+    markOnlineOnConnect: true,
+    browser: ["JARVIS", "Chrome", "1.1.0"],
   });
 
   // Register event handlers

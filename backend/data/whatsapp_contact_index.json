@@ -1,0 +1,223 @@
+{
+  "updated_at": "2026-05-03T16:40:07.625953+00:00",
+  "aliases": {
+    "mom": [
+      "mom",
+      "maa",
+      "mother",
+      "mummy",
+      "mumma",
+      "mama"
+    ],
+    "dad": [
+      "dad",
+      "papa",
+      "father",
+      "daddy",
+      "baba"
+    ]
+  },
+  "contacts": [
+    {
+      "id": "152389868863604@lid",
+      "jid": "152389868863604@lid",
+      "name": null,
+      "notify": null,
+      "pushName": null,
+      "short": null,
+      "displayName": "152389868863604@lid",
+      "is_group": false,
+      "source": "contacts_cache"
+    },
+    {
+      "id": "233959787073607@lid",
+      "jid": "233959787073607@lid",
+      "name": null,
+      "notify": null,
+      "pushName": null,
+      "short": null,
+      "displayName": "233959787073607@lid",
+      "is_group": false,
+      "source": "contacts_cache"
+    },
+    {
+      "id": "222651121463535@lid",
+      "jid": "222651121463535@lid",
+      "name": null,
+      "notify": "richabhatnagar9972@gmail.",
+      "pushName": null,
+      "short": null,
+      "displayName": "richabhatnagar9972@gmail.",
+      "is_group": false,
+      "source": "contacts_cache"
+    },
+    {
+      "id": "917982816303@s.whatsapp.net",
+      "jid": "917982816303@s.whatsapp.net",
+      "name": "maa",
+      "notify": "Maa",
+      "pushName": null,
+      "short": null,
+      "displayName": "Maa",
+      "is_group": false,
+      "source": "contact_aliases"
+    },
+    {
+      "id": "917982816303@s.whatsapp.net",
+      "jid": "917982816303@s.whatsapp.net",
+      "name": "mom",
+      "notify": "Mom",
+      "pushName": null,
+      "short": null,
+      "displayName": "Mom",
+      "is_group": false,
+      "source": "contact_aliases"
+    }
+  ],
+  "index": {
+    "152389868863604lid": [
+      {
+        "chat_id": "152389868863604@lid",
+        "jid": "152389868863604@lid",
+        "chat_name": "152389868863604@lid",
+        "display_name": "152389868863604@lid",
+        "is_group": false,
+        "matched_on": "152389868863604@lid",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "152389868863604 lid": [
+      {
+        "chat_id": "152389868863604@lid",
+        "jid": "152389868863604@lid",
+        "chat_name": "152389868863604@lid",
+        "display_name": "152389868863604@lid",
+        "is_group": false,
+        "matched_on": "152389868863604@lid",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "233959787073607lid": [
+      {
+        "chat_id": "233959787073607@lid",
+        "jid": "233959787073607@lid",
+        "chat_name": "233959787073607@lid",
+        "display_name": "233959787073607@lid",
+        "is_group": false,
+        "matched_on": "233959787073607@lid",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "233959787073607 lid": [
+      {
+        "chat_id": "233959787073607@lid",
+        "jid": "233959787073607@lid",
+        "chat_name": "233959787073607@lid",
+        "display_name": "233959787073607@lid",
+        "is_group": false,
+        "matched_on": "233959787073607@lid",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "richabhatnagar9972gmail": [
+      {
+        "chat_id": "222651121463535@lid",
+        "jid": "222651121463535@lid",
+        "chat_name": "richabhatnagar9972@gmail.",
+        "display_name": "richabhatnagar9972@gmail.",
+        "is_group": false,
+        "matched_on": "richabhatnagar9972@gmail.",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "richabhatnagar9972 gmail": [
+      {
+        "chat_id": "222651121463535@lid",
+        "jid": "222651121463535@lid",
+        "chat_name": "richabhatnagar9972@gmail.",
+        "display_name": "richabhatnagar9972@gmail.",
+        "is_group": false,
+        "matched_on": "richabhatnagar9972@gmail.",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "maa": [
+      {
+        "chat_id": "917982816303@s.whatsapp.net",
+        "jid": "917982816303@s.whatsapp.net",
+        "chat_name": "Maa",
+        "display_name": "Maa",
+        "is_group": false,
+        "matched_on": "maa",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "mom": [
+      {
+        "chat_id": "917982816303@s.whatsapp.net",
+        "jid": "917982816303@s.whatsapp.net",
+        "chat_name": "Mom",
+        "display_name": "Mom",
+        "is_group": false,
+        "matched_on": "mom",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "mother": [
+      {
+        "chat_id": "917982816303@s.whatsapp.net",
+        "jid": "917982816303@s.whatsapp.net",
+        "chat_name": "Mom",
+        "display_name": "Mom",
+        "is_group": false,
+        "matched_on": "mother",
+        "match_type": "alias",
+        "score": 1.0
+      }
+    ],
+    "mummy": [
+      {
+        "chat_id": "917982816303@s.whatsapp.net",
+        "jid": "917982816303@s.whatsapp.net",
+        "chat_name": "Mom",
+        "display_name": "Mom",
+        "is_group": false,
+        "matched_on": "mummy",
+        "match_type": "alias",
+        "score": 1.0
+      }
+    ],
+    "mumma": [
+      {
+        "chat_id": "917982816303@s.whatsapp.net",
+        "jid": "917982816303@s.whatsapp.net",
+        "chat_name": "Mom",
+        "display_name": "Mom",
+        "is_group": false,
+        "matched_on": "mumma",
+        "match_type": "alias",
+        "score": 1.0
+      }
+    ],
+    "mama": [
+      {
+        "chat_id": "917982816303@s.whatsapp.net",
+        "jid": "917982816303@s.whatsapp.net",
+        "chat_name": "Mom",
+        "display_name": "Mom",
+        "is_group": false,
+        "matched_on": "mama",
+        "match_type": "alias",
+        "score": 1.0
+      }
+    ]
+  }
+}

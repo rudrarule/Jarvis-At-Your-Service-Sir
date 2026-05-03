@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export interface Message {
   id: number;
@@ -6,7 +6,7 @@ export interface Message {
   sender: "user" | "jarvis";
 }
 
-const BACKEND_URL = "http://localhost:8002";
+const BACKEND_URL = "http://localhost:8082";
 
 /**
  * useJarvis — manages the full AI pipeline:
@@ -20,6 +20,8 @@ export function useJarvis(onMessageIntercept?: (text: string) => boolean) {
     { id: 1, text: "System initialized. All modules online.", sender: "jarvis" },
   ]);
   const recognitionRef = useRef<any>(null);
+  const isListeningRef = useRef(false);
+  const toggleListeningRef = useRef<() => void>(() => {});
 
   /** Text-to-Speech: try ElevenLabs first, fall back to browser TTS */
   const speak = useCallback(async (text: string) => {
@@ -50,6 +52,40 @@ export function useJarvis(onMessageIntercept?: (text: string) => boolean) {
     window.speechSynthesis.speak(speech);
   }, []);
 
+  /** TTS that returns a Promise resolving when speech finishes (for confirmation flows) */
+  const speakAndWait = useCallback(async (text: string): Promise<void> => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (res.ok && res.headers.get("content-type")?.includes("audio")) {
+        const audioBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        return new Promise((resolve) => {
+          const audio = new Audio(audioUrl);
+          audio.onended = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+          audio.onerror = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+          audio.play().catch(() => resolve());
+        });
+      }
+    } catch (err) {
+      console.warn("speakAndWait TTS failed, using browser fallback:", err);
+    }
+
+    // Fallback: browser built-in TTS
+    return new Promise((resolve) => {
+      const speech = new SpeechSynthesisUtterance(text);
+      speech.lang = "en-US";
+      speech.onend = () => resolve();
+      speech.onerror = () => resolve();
+      window.speechSynthesis.speak(speech);
+      setTimeout(resolve, 15000); // safety timeout
+    });
+  }, []);
+
   /** Send a message (voice or typed) to the backend and handle the response */
   const sendToJarvis = useCallback(
     async (message: string) => {
@@ -74,7 +110,11 @@ export function useJarvis(onMessageIntercept?: (text: string) => boolean) {
           body: JSON.stringify({ message }),
         });
         const data = await res.json();
-        const reply = data.reply ?? "No response received.";
+        const rawReply = data.reply ?? "No response received.";
+
+        // Check for confirmation mic marker from workflow engine
+        const needsConfirmMic = rawReply.includes("__CONFIRM_MIC__");
+        const reply = rawReply.replace("__CONFIRM_MIC__", "").trim();
 
         // Add J.A.R.V.I.S reply to chat history
         setMessages((prev) => [
@@ -82,8 +122,18 @@ export function useJarvis(onMessageIntercept?: (text: string) => boolean) {
           { id: Date.now() + 1, text: reply, sender: "jarvis" },
         ]);
 
-        // Speak the reply aloud (ElevenLabs or browser fallback)
-        speak(reply);
+        if (needsConfirmMic) {
+          // Speak the confirmation prompt, then auto-open mic for yes/no
+          await speakAndWait(reply);
+          setIsResponding(false);
+          // Auto-open mic for voice confirmation
+          if (!isListeningRef.current) {
+            toggleListeningRef.current();
+          }
+        } else {
+          // Normal flow: speak the reply
+          speak(reply);
+        }
       } catch (err) {
         console.error("Failed to reach J.A.R.V.I.S backend:", err);
         setMessages((prev) => [
@@ -148,6 +198,10 @@ export function useJarvis(onMessageIntercept?: (text: string) => boolean) {
     recognition.start();
     setIsListening(true);
   }, [isListening, sendToJarvis]);
+
+  // Keep stable refs for use inside sendToJarvis callback
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
+  useEffect(() => { toggleListeningRef.current = toggleListening; }, [toggleListening]);
 
   /** Send a typed message (used by ChatPanel input) */
   const sendMessage = useCallback(

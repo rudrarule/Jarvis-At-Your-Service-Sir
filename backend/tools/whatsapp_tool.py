@@ -45,7 +45,20 @@ async def whatsapp_missed_calls() -> str:
 
 async def whatsapp_send(contact: str, message: str) -> str:
     """Send a WhatsApp message to a contact."""
-    result = await send_whatsapp_message(contact, message)
+    from services.contact_resolver import resolve_contact
+
+    resolved_contact = contact
+    resolved = await resolve_contact(contact)
+    if resolved.get("status") == "single":
+        match = resolved["match"]
+        resolved_contact = match["chat_id"]
+    elif resolved.get("status") == "multiple":
+        options = ", ".join(m["chat_name"] for m in resolved.get("matches", [])[:5])
+        return f"I found multiple contacts for {contact}: {options}. Please be more specific, sir."
+    elif "@" not in contact:
+        return f"I couldn't find a WhatsApp contact named {contact}, sir."
+
+    result = await send_whatsapp_message(resolved_contact, message)
 
     if result.get("success"):
         return f"Message sent to {contact}, sir."

@@ -92,6 +92,13 @@ function createApi(getSocket) {
         jid = `${jid}@s.whatsapp.net`;
       }
 
+      if (!sock || store.getConnectionState().status !== "connected") {
+        return res.status(503).json({ 
+          error: "WhatsApp not connected",
+          detail: "The connector is currently disconnected or reconnecting."
+        });
+      }
+
       await sock.sendMessage(jid, { text });
       console.log(`[API] Message sent to ${jid}: ${text.substring(0, 60)}`);
       res.json({ success: true, chat_id: jid });
@@ -126,6 +133,92 @@ function createApi(getSocket) {
       const records = db.getAllAutoReplies();
       res.json({ count: records.length, records });
     } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Search Chats / Contacts ─────────────────────────────
+  app.get("/search-chats", (req, res) => {
+    const query = req.query.query;
+    if (!query) {
+      return res.status(400).json({
+        error: "Missing required query parameter: query",
+      });
+    }
+
+    // First try our in-memory/persisted cache
+    let matches = store.searchChats(query);
+
+    // If no results, try querying the Baileys socket's internal contacts
+    if (matches.length === 0) {
+      const sock = getSocket();
+      if (sock?.store?.contacts) {
+        const socketContacts = Object.values(sock.store.contacts);
+        
+        // Cache all socket contacts into our store for future searches
+        if (socketContacts.length > 0) {
+          store.upsertContacts(socketContacts);
+          console.log(`[API] Loaded ${socketContacts.length} contacts from Baileys socket store`);
+          // Retry search with the now-populated cache
+          matches = store.searchChats(query);
+        }
+      }
+    }
+
+    res.json({ matches, count: matches.length });
+  });
+
+  // ── Sync Contacts (manual trigger) ─────────────────────
+  app.get("/contacts", (req, res) => {
+    let contacts = store.getContacts();
+
+    if (contacts.length === 0) {
+      const sock = getSocket();
+      if (sock?.store?.contacts) {
+        const socketContacts = Object.values(sock.store.contacts);
+        if (socketContacts.length > 0) {
+          store.upsertContacts(socketContacts);
+          contacts = store.getContacts();
+        }
+      }
+    }
+
+    res.json({ contacts, count: contacts.length });
+  });
+
+  app.post("/sync-contacts", async (req, res) => {
+    const sock = getSocket();
+    if (!sock) {
+      return res.status(503).json({ error: "WhatsApp not connected" });
+    }
+
+    try {
+      // Try to fetch contacts from the socket's internal store
+      // Baileys caches contacts it has seen in sock.store
+      if (sock.store?.contacts) {
+        const contactsList = Object.values(sock.store.contacts);
+        if (contactsList.length > 0) {
+          store.upsertContacts(contactsList);
+          return res.json({
+            success: true,
+            source: "socket_store",
+            count: contactsList.length,
+          });
+        }
+      }
+
+      // Fallback: request contact list via presence subscribe
+      // This triggers contacts.upsert events
+      await sock.sendPresenceUpdate("available");
+      
+      res.json({
+        success: true,
+        source: "presence_trigger",
+        message: "Presence update sent. Contacts should sync shortly.",
+        current_cache_size: store.searchChats("").length || 0,
+      });
+    } catch (err) {
+      console.error("[API] Sync contacts failed:", err.message);
       res.status(500).json({ error: err.message });
     }
   });

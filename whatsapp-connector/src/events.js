@@ -77,6 +77,24 @@ function registerEvents(sock, saveCreds) {
     }
   });
 
+  // ── Contacts Sync ────────────────────────────────────────
+  sock.ev.on("contacts.upsert", (contactsArr) => {
+    store.upsertContacts(contactsArr);
+    console.log(`[WA] Contacts synced (upsert): ${contactsArr.length} contacts received`);
+  });
+
+  sock.ev.on("contacts.update", (updates) => {
+    store.upsertContacts(updates);
+  });
+
+  // Baileys v6+ often delivers contacts via history sync
+  sock.ev.on("messaging-history.set", (data) => {
+    if (data.contacts && data.contacts.length > 0) {
+      store.upsertContacts(data.contacts);
+      console.log(`[WA] Contacts synced (history): ${data.contacts.length} contacts received`);
+    }
+  });
+
   // ── Credentials Update ──────────────────────────────────
   sock.ev.on("creds.update", saveCreds);
 
@@ -109,6 +127,11 @@ function registerEvents(sock, saveCreds) {
       // Determine chat name
       const pushName = msg.pushName || sender;
       const chatName = isGroup ? chatId : pushName;
+
+      // Also cache the contact's pushName for search
+      if (pushName && !isGroup && chatId) {
+        store.upsertContacts([{ id: chatId, notify: pushName }]);
+      }
 
       const messageData = {
         id: msg.key.id,
