@@ -13,3 +13,6 @@ pygame>=2.6.0
 pyttsx3>=2.90
 pydub>=0.25.1
 playwright>=1.40.0
+pyautogui>=0.9.54
+Pillow>=10.2.0
+pygetwindow>=0.0.9

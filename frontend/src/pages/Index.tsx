@@ -41,7 +41,7 @@ const Index = () => {
 
   // Voice activation: "Hey Jarvis" wake word
   const { isWakeActive, isBooting, startWakeSystem, stopWakeSystem, triggerStarkProtocol, isListeningMusic } =
-    useJarvisWake(toggleListening, isListening, (text) => addMessage(text, "jarvis"));
+    useJarvisWake(toggleListening, isListening, (text) => addMessage(text, "jarvis"), sendMessage);
 
   useEffect(() => {
     starkTriggerRef.current = triggerStarkProtocol;

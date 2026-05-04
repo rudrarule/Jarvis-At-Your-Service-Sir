@@ -11,6 +11,7 @@ export function useWakeWord(onWake: () => void) {
   const activeRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const onWakeRef = useRef(onWake);
+  const commandModeRef = useRef<{ resolve: (text: string) => void } | null>(null);
 
   // Keep callback ref fresh
   useEffect(() => {
@@ -41,12 +42,33 @@ export function useWakeWord(onWake: () => void) {
 
     recognition.onresult = (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript.toLowerCase().trim();
-        // Strict match — only trigger on exactly "hey jarvis"
-        if (transcript.includes(WAKE_PHRASE)) {
-          console.log('🗣️ Wake word detected: "Hey Jarvis" (heard: "' + transcript + '")');
-          onWakeRef.current();
-          return;
+        const result = event.results[i];
+        const transcriptRaw = result[0].transcript;
+        const transcriptLower = transcriptRaw.toLowerCase().trim();
+
+        if (commandModeRef.current) {
+          // If we are explicitly listening for a command (e.g. after "Yes, sir?")
+          if (result.isFinal) {
+            const resolve = commandModeRef.current.resolve;
+            commandModeRef.current = null; // Reset back to wake mode
+            resolve(transcriptRaw.trim());
+          }
+        } else {
+          // Wake word detection mode
+          const matchIndex = transcriptLower.indexOf(WAKE_PHRASE);
+          if (matchIndex !== -1) {
+            const inlineCommand = transcriptRaw.substring(matchIndex + WAKE_PHRASE.length).trim();
+            
+            if (inlineCommand.length > 0 && result.isFinal) {
+              console.log('🗣️ Wake word + inline command detected:', inlineCommand);
+              onWakeRef.current(inlineCommand);
+              return;
+            } else if (!inlineCommand) {
+              console.log('🗣️ Wake word detected: "Hey Jarvis"');
+              onWakeRef.current();
+              return;
+            }
+          }
         }
       }
     };
@@ -106,5 +128,20 @@ export function useWakeWord(onWake: () => void) {
     };
   }, []);
 
-  return { start, stop };
+  const listenOnce = useCallback((): Promise<string> => {
+    return new Promise((resolve) => {
+      commandModeRef.current = { resolve };
+      console.log("👂 Wake system listening for follow-up command...");
+      
+      // Optional timeout to prevent getting stuck in command mode
+      setTimeout(() => {
+        if (commandModeRef.current) {
+          commandModeRef.current = null;
+          resolve(""); // Resolve empty to indicate timeout
+        }
+      }, 10000); // 10 seconds max wait
+    });
+  }, []);
+
+  return { start, stop, listenOnce };
 }

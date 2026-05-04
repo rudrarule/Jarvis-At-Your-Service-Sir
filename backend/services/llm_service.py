@@ -12,6 +12,7 @@ import asyncio
 import httpx
 import re
 import os
+import time
 
 try:
     import boto3
@@ -31,6 +32,7 @@ from tools.registry import TOOL_SCHEMAS, TOOL_GROUPS, get_schemas_for_intent, ex
 OLLAMA_URL = "http://localhost:11434"
 OLLAMA_MODEL = "qwen2.5:3b"
 CACHE = {}  # In-memory chat cache (singleton)
+_LAST_VISION_TRIGGER = 0.0  # Debounce guard for Retina module
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -184,7 +186,7 @@ def _is_chat_shortcut(msg: str) -> bool:
     words = msg_lower.split()
     
     # Override: Command verbs ALWAYS trigger tool path
-    commands = {"open", "play", "search", "send", "turn", "message", "text", "close", "start", "launch", "find", "lock", "list"}
+    commands = {"open", "play", "search", "send", "turn", "message", "text", "close", "start", "launch", "find", "lock", "list", "shutdown", "restart", "exit", "quit", "stop"}
     if any(cmd in words for cmd in commands):
         return False
 
@@ -239,8 +241,8 @@ def is_complex_query(msg: str) -> bool:
 
     tool_intents = _get_suggested_intents(msg)
     
-    # Heuristic 1: Multiple intents usually need the smarter model (Bedrock)
-    if len(tool_intents) > 1:
+    # Heuristic 1: Multiple intents or critical SYSTEM actions need the smarter model (Bedrock)
+    if len(tool_intents) > 1 or "SYSTEM" in tool_intents:
         return True
 
     # Heuristic 2: Greetings or very short simple tool commands stay on local Ollama
@@ -431,6 +433,86 @@ async def _call_ollama(messages: list[dict], tools_to_send: list[dict] | None = 
 
 # (Removed old _tier2_classify, _tier3_route, and _chat_response)
 
+# ── Retina Module (Vision) ────────────────────────────────
+
+def _classify_vision_intent(message: str, conversation_history: list) -> bool:
+    """Two-stage intent check for visual reasoning."""
+    msg_lower = message.lower()
+    
+    # Stage 1: Keyword Signal
+    vision_keywords = ["look at", "see", "check my screen", "what is this", "what's on", "can you see", "describe my"]
+    if not any(kw in msg_lower for kw in vision_keywords):
+        return False
+        
+    # Stage 2: Scope Check (reject if code blocks, URLs, or referring to attachments/history)
+    if "```" in message:
+        return False
+        
+    url_pattern = r"(https?://\S+|www\.\S+)"
+    if re.search(url_pattern, message):
+        return False
+        
+    history_keywords = ["the above", "previous message", "that message", "what you just said"]
+    if any(kw in msg_lower for kw in history_keywords):
+        return False
+        
+    return True
+
+async def _call_maverick_vision(image_b64: str, user_message: str) -> str | None:
+    """Route image+text to Bedrock Llama 4 Maverick Converse API."""
+    import base64
+    from botocore.exceptions import ClientError
+    try:
+        from PIL import UnidentifiedImageError
+    except ImportError:
+        UnidentifiedImageError = Exception
+
+    try:
+        client = _get_bedrock_client()
+        image_bytes = base64.b64decode(image_b64)
+        
+        preamble = "Analyze the following screenshot with your usual precision. Lead with the most actionable observation. You may be witty, but be useful first.\n\n"
+        
+        response = await asyncio.to_thread(
+            client.converse,
+            modelId=CLAUDE_MODEL_ID,  # Variable is reused but holds the Llama 4 Maverick ID
+            system=[{"text": JARVIS_CHAT_PROMPT}],
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "image": {
+                            "format": "jpeg",
+                            "source": {"bytes": image_bytes}
+                        }
+                    },
+                    {"text": preamble + user_message}
+                ]
+            }],
+            inferenceConfig={"maxTokens": 1024, "temperature": 0.3}
+        )
+        
+        message = response.get("output", {}).get("message", {})
+        content_blocks = message.get("content", [])
+        
+        text_blocks = [block["text"] for block in content_blocks if "text" in block]
+        text = "\n".join(text_blocks).strip()
+        
+        print(f"[VISION] Maverick response received. {response.get('usage', {}).get('totalTokens', 0)} tokens.")
+        return text
+
+    except ClientError as e:
+        print(f"[VISION] Error: ClientError — routing to text fallback. {e}")
+        return None
+    except UnidentifiedImageError as e:
+        print(f"[VISION] Error: UnidentifiedImageError — routing to text fallback. {e}")
+        return None
+    except Exception as e:
+        import traceback
+        print(f"[VISION] Error: {e} — routing to text fallback.")
+        print(traceback.format_exc())
+        return None
+
 
 # ── Main Entry Point ──────────────────────────────────────
 
@@ -552,6 +634,41 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
         append_message(session_id, "assistant", fast_result)
         return fast_result
 
+    # ── Vision Intent Check (Retina Module) ──
+    global _LAST_VISION_TRIGGER
+    
+    history = get_session_history(session_id, limit=6)
+    text_fallback_prefix = ""
+    
+    if _classify_vision_intent(user_message, history):
+        from services.vision_service import _capture_retina_view
+        print("[VISION] Intent detected.")
+        current_time = time.time()
+        
+        if current_time - _LAST_VISION_TRIGGER < 15.0:
+            reply = "Sir, I've only just finished looking. Patience is a virtue, even for AIs."
+            print("[VISION] Debounce check: FAILED.")
+            append_message(session_id, "assistant", reply)
+            return reply
+            
+        print("[VISION] Debounce check: OK.")
+        _LAST_VISION_TRIGGER = current_time
+        
+        img_b64, err = _capture_retina_view()
+        if err:
+            if "sensitive credentials" in err:
+                append_message(session_id, "assistant", err)
+                return err
+            else:
+                text_fallback_prefix = err + " "
+        else:
+            vision_reply = await _call_maverick_vision(img_b64, user_message)
+            if vision_reply:
+                append_message(session_id, "assistant", vision_reply)
+                return vision_reply
+            else:
+                text_fallback_prefix = "Sir, my visual cortex appears to be offline. I can still assist you in the traditional, text-based, decidedly less impressive fashion. "
+
     # ── Memory Pipeline (Optimized) ──
     mem_store_triggers = ["remember", "my name is", "note that", "save this"]
     mem_retrieve_triggers = ["my", "remember", "who am i", "what is my", "do you know"]
@@ -578,13 +695,21 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
         return reply
 
     # ── Unified Brain Call ──
-    return await _route_hybrid_llm(
+    text_reply = await _route_hybrid_llm(
         user_message=user_message,
         session_id=session_id,
         memory_context=memory_context,
         append_message=append_message,
         get_session_history=get_session_history,
     )
+    
+    if text_fallback_prefix:
+        # Prepend the fallback apology to the generated text reply
+        # Note: the append_message inside _route_hybrid_llm will have stored the reply WITHOUT the prefix.
+        # We'd have to edit the history manually to keep it perfectly consistent, but for spoken output, this is fine.
+        text_reply = text_fallback_prefix + text_reply
+        
+    return text_reply
 
 
 # ── WhatsApp Send Workflow Orchestration ──────────────────

@@ -98,7 +98,8 @@ async function speakWithPromise(text: string): Promise<void> {
 export function useJarvisWake(
   toggleListening: () => void,
   isListening: boolean,
-  onBriefingReady?: (text: string) => void
+  onBriefingReady?: (text: string) => void,
+  sendMessage?: (text: string) => void
 ) {
   const [isWakeActive, setIsWakeActive] = useState(false);
   const [isBooting, setIsBooting] = useState(false);
@@ -129,18 +130,26 @@ export function useJarvisWake(
     prevListeningRef.current = isListening;
   }, [isListening]);
 
-  const wakeRef = useRef<{ start: () => void; stop: () => void }>({
+  const wakeRef = useRef<{ start: () => void; stop: () => void; listenOnce: () => Promise<string> }>({
     start: () => {},
     stop: () => {},
+    listenOnce: async () => "",
   });
 
   /** Stark Protocol Orchestration Handler */
-  const handleActivation = useCallback(async () => {
+  const handleActivation = useCallback(async (inlineCommand?: string) => {
     if (cooldownRef.current) return;
     cooldownRef.current = true;
 
-    // Stop wake detector
-    wakeRef.current.stop();
+    // Note: We do NOT stop the wake detector here anymore. 
+    // It stays active to capture the follow-up command cleanly in the background.
+
+    if (inlineCommand) {
+      console.log("⚡ One-breath command detected:", inlineCommand);
+      if (sendMessage) sendMessage(inlineCommand);
+      setTimeout(() => { cooldownRef.current = false; }, 1000);
+      return;
+    }
 
     // ── Subsequent wake: just activate mic ──
     if (hasBriefedRef.current) {
@@ -148,9 +157,14 @@ export function useJarvisWake(
       playStartupChime();
       await speakWithPromise("Yes, sir?");
 
-      // Activate main speech recognition
-      if (!isListeningRef.current) {
-        toggleListeningRef.current();
+      // Activate main speech recognition via the background-safe unified listener
+      if (sendMessage) {
+        setIsListeningMusic(true); // Re-use this state for UI feedback
+        const transcript = await wakeRef.current.listenOnce();
+        setIsListeningMusic(false);
+        if (transcript) {
+          sendMessage(transcript);
+        }
       }
 
       setTimeout(() => {
@@ -189,43 +203,11 @@ export function useJarvisWake(
       // 5. Speak final prompt
       await speakWithPromise("Would you like me to play your song, sir? It may help you relax during your coding session.");
 
-      // Custom short-window listener for confirmation
-      const listenForConfirmation = async (): Promise<string | null> => {
-        return new Promise((resolve) => {
-          const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-          if (!SpeechRecognition) return resolve(null);
-          
-          const recognition = new SpeechRecognition();
-          recognition.lang = "en-US";
-          recognition.interimResults = false;
-          
-          let timeoutId = setTimeout(() => {
-            recognition.stop();
-            resolve(null);
-          }, 7000); // 7 second window
-
-          recognition.onresult = (event: any) => {
-            clearTimeout(timeoutId);
-            resolve(event.results[0][0].transcript);
-          };
-          recognition.onerror = () => {
-            clearTimeout(timeoutId);
-            resolve(null);
-          };
-          recognition.onend = () => {
-            clearTimeout(timeoutId);
-            resolve(null);
-          };
-
-          setIsListeningMusic(true);
-          recognition.start();
-        }).finally(() => {
-          setIsListeningMusic(false);
-        }) as Promise<string | null>;
-      };
-
       const askForMusic = async (attempt: number): Promise<void> => {
-        const transcript = await listenForConfirmation();
+        setIsListeningMusic(true);
+        const transcript = await wakeRef.current.listenOnce();
+        setIsListeningMusic(false);
+
         if (transcript) {
           const text = transcript.toLowerCase();
           const isPositive = /yes|play it|go ahead|sure|yes please|yeah|yep|do it/i.test(text);
@@ -268,10 +250,9 @@ export function useJarvisWake(
     // After activation sequence finishes, cooldown rests.
     setTimeout(() => {
       cooldownRef.current = false;
-      console.log("🔄 Wake cooldown finished, restarting wake word detector");
-      wakeRef.current.start();
+      console.log("🔄 Wake cooldown finished");
     }, 1000);
-  }, []);
+  }, [sendMessage]);
 
   const wakeWord = useWakeWord(handleActivation);
 
@@ -291,6 +272,15 @@ export function useJarvisWake(
     setIsWakeActive(false);
   }, [wakeWord]);
 
+  const listenForFollowup = useCallback(async () => {
+    setIsListeningMusic(true);
+    const transcript = await wakeRef.current.listenOnce();
+    setIsListeningMusic(false);
+    if (transcript && sendMessage) {
+      sendMessage(transcript);
+    }
+  }, [sendMessage]);
+
   return {
     isWakeActive,
     isBooting,
@@ -298,5 +288,6 @@ export function useJarvisWake(
     startWakeSystem,
     stopWakeSystem,
     triggerStarkProtocol: handleActivation,
+    listenForFollowup,
   };
 }
