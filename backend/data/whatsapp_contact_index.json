@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-05-03T16:40:07.625953+00:00",
+  "updated_at": "2026-05-09T14:24:49.796242+00:00",
   "aliases": {
     "mom": [
       "mom",
@@ -52,6 +52,28 @@
       "source": "contacts_cache"
     },
     {
+      "id": "260459802394733@lid",
+      "jid": "260459802394733@lid",
+      "name": null,
+      "notify": "Akshat",
+      "pushName": null,
+      "short": null,
+      "displayName": "Akshat",
+      "is_group": false,
+      "source": "contacts_cache"
+    },
+    {
+      "id": "73289389047883@lid",
+      "jid": "73289389047883@lid",
+      "name": null,
+      "notify": "Priyamwada Sonnet",
+      "pushName": null,
+      "short": null,
+      "displayName": "Priyamwada Sonnet",
+      "is_group": false,
+      "source": "contacts_cache"
+    },
+    {
       "id": "917982816303@s.whatsapp.net",
       "jid": "917982816303@s.whatsapp.net",
       "name": "maa",
@@ -75,7 +97,7 @@
     }
   ],
   "index": {
-    "152389868863604lid": [
+    "152389868863604 lid": [
       {
         "chat_id": "152389868863604@lid",
         "jid": "152389868863604@lid",
@@ -87,7 +109,7 @@
         "score": 1.0
       }
     ],
-    "152389868863604 lid": [
+    "152389868863604lid": [
       {
         "chat_id": "152389868863604@lid",
         "jid": "152389868863604@lid",
@@ -123,6 +145,18 @@
         "score": 1.0
       }
     ],
+    "richabhatnagar9972 gmail": [
+      {
+        "chat_id": "222651121463535@lid",
+        "jid": "222651121463535@lid",
+        "chat_name": "richabhatnagar9972@gmail.",
+        "display_name": "richabhatnagar9972@gmail.",
+        "is_group": false,
+        "matched_on": "richabhatnagar9972@gmail.",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
     "richabhatnagar9972gmail": [
       {
         "chat_id": "222651121463535@lid",
@@ -135,14 +169,38 @@
         "score": 1.0
       }
     ],
-    "richabhatnagar9972 gmail": [
+    "akshat": [
       {
-        "chat_id": "222651121463535@lid",
-        "jid": "222651121463535@lid",
-        "chat_name": "richabhatnagar9972@gmail.",
-        "display_name": "richabhatnagar9972@gmail.",
+        "chat_id": "260459802394733@lid",
+        "jid": "260459802394733@lid",
+        "chat_name": "Akshat",
+        "display_name": "Akshat",
         "is_group": false,
-        "matched_on": "richabhatnagar9972@gmail.",
+        "matched_on": "Akshat",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "priyamwada sonnet": [
+      {
+        "chat_id": "73289389047883@lid",
+        "jid": "73289389047883@lid",
+        "chat_name": "Priyamwada Sonnet",
+        "display_name": "Priyamwada Sonnet",
+        "is_group": false,
+        "matched_on": "Priyamwada Sonnet",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "priyamwadasonnet": [
+      {
+        "chat_id": "73289389047883@lid",
+        "jid": "73289389047883@lid",
+        "chat_name": "Priyamwada Sonnet",
+        "display_name": "Priyamwada Sonnet",
+        "is_group": false,
+        "matched_on": "Priyamwada Sonnet",
         "match_type": "name",
         "score": 1.0
       }

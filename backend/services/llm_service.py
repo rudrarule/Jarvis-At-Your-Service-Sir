@@ -76,6 +76,39 @@ async def _tier1_regex(msg: str, session_id: str = "default") -> str | None:
     
     # Strip "jarvis" prefix
     msg_clean = re.sub(r"^(?:hey\s*)?jarvis\s*,?\s*", "", msg.lower().strip())
+
+    # ── Compound Command Splitter ──
+    # Detect "open chrome and open spotify", "launch vscode, open chrome and play music"
+    # Also handles shorthand: "open chrome and spotify" → ["open chrome", "open spotify"]
+    # Split on " and " or ", " then try each sub-command through regex fast-path
+    if re.search(r"\b(?:and|,)\b", msg_clean):
+        parts = re.split(r"\s*(?:,\s*(?:and\s+)?|\s+and\s+)\s*", msg_clean)
+        parts = [p.strip() for p in parts if p.strip()]
+        if len(parts) > 1:
+            # Infer verb from the first part for bare noun sub-parts
+            # e.g. "open chrome and spotify" → first verb is "open", so "spotify" → "open spotify"
+            verb_match = re.match(r"^(open|launch|start|play|close|quit|exit|kill)\s+", parts[0])
+            if verb_match:
+                inferred_verb = verb_match.group(1)
+                for i in range(1, len(parts)):
+                    # If a part doesn't start with a command verb, prepend the inferred one
+                    if not re.match(r"^(?:open|launch|start|play|close|quit|exit|kill|put on|listen to)\s+", parts[i]):
+                        parts[i] = f"{inferred_verb} {parts[i]}"
+
+            # Try each part through regex fast-path (recursive but without compound split)
+            tasks = [_tier1_regex_single(part, session_id) for part in parts]
+            results = await asyncio.gather(*tasks)
+            # Only succeed if ALL parts matched (no None results)
+            if all(r is not None for r in results):
+                print(f"[TIER 1] Compound command: {len(results)} sub-commands executed in parallel")
+                return " ".join(results)
+            # If any part didn't match, fall through to LLM tiers
+
+    return await _tier1_regex_single(msg_clean, session_id)
+
+
+async def _tier1_regex_single(msg_clean: str, session_id: str = "default") -> str | None:
+    """Single-command regex matching. Called directly or from compound splitter."""
     
     # 1. Play Music — "play X", "put on X", "listen to X"
     play_match = re.match(r"^(?:play|put on|listen to)\s+(.+)$", msg_clean)
@@ -327,6 +360,11 @@ async def call_claude(messages: list[dict], tools: list[dict] | None = None) -> 
     # Ensure only the last 6 messages are kept for context
     converse_messages = converse_messages[-6:]
 
+    # Bedrock requires the conversation to start with a 'user' message.
+    # After slicing, the first message might be 'assistant' — trim until we lead with 'user'.
+    while converse_messages and converse_messages[0]["role"] != "user":
+        converse_messages.pop(0)
+
     client = _get_bedrock_client()
     
     kwargs = {
@@ -368,10 +406,15 @@ async def call_claude(messages: list[dict], tools: list[dict] | None = None) -> 
         tool_name = tool_use["name"]
         arguments = tool_use["input"]
         
-        # Un-wrap Llama tool hallucination format e.g. {'query': {'type': 'string', 'value': 'hi'}}
-        for k, v in arguments.items():
-            if isinstance(v, dict) and "value" in v:
-                arguments[k] = v["value"]
+        # Un-wrap hallucinated tool arg formats:
+        #   {'query': {'type': 'string', 'value': 'hi'}}  → {'query': 'hi'}
+        #   {'query': {'query': 'transformers vs RNNs'}}   → {'query': 'transformers vs RNNs'}
+        for k, v in list(arguments.items()):
+            if isinstance(v, dict):
+                if "value" in v:
+                    arguments[k] = v["value"]
+                elif k in v:
+                    arguments[k] = v[k]
                 
         print(f"[CLAUDE TOOL] Exec -> {tool_name}({arguments})")
         tasks.append(execute_tool(tool_name, arguments))
@@ -687,12 +730,18 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
             print(f"[MEMORY] Retrieved: {memories}")
             memory_context = memories
 
-    # ── Response Caching ──
+    # ── Response Caching (skip tool-action responses to prevent poisoning) ──
     if user_message in CACHE:
         reply = CACHE[user_message]
-        print(f"[CACHE] Hit: '{user_message}' -> '{reply[:30]}...'")
-        append_message(session_id, "assistant", reply)
-        return reply
+        # Don't serve cached tool-action responses (browser, file, etc.)
+        tool_patterns = ["Opening browser", "Searching the web", "quote_from_bytes"]
+        if not any(p in reply for p in tool_patterns):
+            print(f"[CACHE] Hit: '{user_message}' -> '{reply[:30]}...'")
+            append_message(session_id, "assistant", reply)
+            return reply
+        else:
+            print(f"[CACHE] Skipping stale tool-action cache for: '{user_message[:40]}'")
+            del CACHE[user_message]
 
     # ── Unified Brain Call ──
     text_reply = await _route_hybrid_llm(

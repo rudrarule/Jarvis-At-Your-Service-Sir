@@ -1,11 +1,18 @@
 import asyncio
+import os
+import sys
+
+# Windows-specific: ProactorEventLoop is required for subprocesses (Playwright, etc.)
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, PlainTextResponse
 
-from models.chat_model import ChatRequest, ChatResponse, TTSRequest, MusicRequest
+from models.chat_model import ChatRequest, ChatResponse, TTSRequest, MusicRequest, AppRequest
 from services.llm_service import generate_response
 from services.memory_service import get_all_memories, clear_all_memories
 from services import text_to_speech_service
@@ -213,6 +220,46 @@ async def stark_music(request: MusicRequest = None):
     query = request.query if request else "light rock playlist"
     title, url = play_music(query)
     return {"title": title, "url": url}
+
+
+@app.post("/stark-protocol/open-app")
+async def stark_open_app(request: AppRequest):
+    from tools.system_control_tool import open_app
+    result = open_app(request.app_name)
+    return {"status": result}
+
+
+# ── Speech-to-Text (for background tab command capture) ────
+@app.post("/stt")
+async def speech_to_text(audio: UploadFile = File(...)):
+    """
+    Accepts raw WAV audio, transcribes using faster-whisper (local).
+    Used when the browser tab is in the background and webkitSpeechRecognition fails.
+    """
+    import tempfile, os
+    from faster_whisper import WhisperModel
+
+    try:
+        audio_bytes = await audio.read()
+        if len(audio_bytes) < 100:
+            return {"text": ""}
+
+        # Write to temp file for faster-whisper
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(audio_bytes)
+            temp_path = f.name
+
+        try:
+            model = WhisperModel("tiny", device="cpu", compute_type="int8")
+            segments, _ = model.transcribe(temp_path, beam_size=1, language="en")
+            text = " ".join(seg.text.strip() for seg in segments).strip()
+            print(f"[STT] Transcribed: \"{text}\"")
+            return {"text": text}
+        finally:
+            os.unlink(temp_path)
+    except Exception as e:
+        print(f"[STT] Error: {e}")
+        return {"text": ""}
 
 
 # ── WhatsApp Integration (Twilio Webhook) ─────────────────

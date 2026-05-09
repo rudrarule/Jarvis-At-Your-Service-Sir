@@ -214,15 +214,23 @@ export function useJarvisWake(
           const isNegative = /no|skip|not now|maybe later|nope|stop|cancel/i.test(text);
           
           if (isPositive) {
-            await speakWithPromise("Certainly, sir. Playing Lose My Mind.");
+            await speakWithPromise("Certainly, sir. Playing Lose My Mind and opening V S CODE.");
             try {
-              await fetch(`${BACKEND_URL}/stark-protocol/music`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query: "Lose My Mind F1" })
-              });
+              // Trigger both music and VS Code simultaneously
+              await Promise.all([
+                fetch(`${BACKEND_URL}/stark-protocol/music`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ query: "Lose My Mind F1" })
+                }),
+                fetch(`${BACKEND_URL}/stark-protocol/open-app`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ app_name: "vscode" })
+                })
+              ]);
             } catch (err) {
-              console.error("Music tool failed:", err);
+              console.error("Stark automation failed:", err);
             }
           } else if (isNegative) {
             await speakWithPromise("Understood, sir.");

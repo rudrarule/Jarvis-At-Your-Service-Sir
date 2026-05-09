@@ -19,3 +19,7 @@ class TTSRequest(BaseModel):
 
 class MusicRequest(BaseModel):
     query: str = "light rock playlist"
+
+
+class AppRequest(BaseModel):
+    app_name: str
