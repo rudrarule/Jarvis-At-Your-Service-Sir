@@ -275,10 +275,10 @@ Create a `.env` file in the `backend/` directory:
 
 ```env
 # LLM Configuration
-USE_CLAUDE=true                          # Enable Bedrock routing
-AWS_BEDROCK_REGION=us-west-1
-CLAUDE_MODEL_ID=meta.llama4-maverick-17b-instruct-v1:0
-CLAUDE_MAX_TOKENS=1024
+USE_MODEL=true                          # Enable Bedrock routing
+AWS_BEDROCK_REGION=""
+_MODEL_ID=""
+MODEL_MAX_TOKENS=1024
 
 # WhatsApp (Twilio)
 TWILIO_ACCOUNT_SID=your_sid
