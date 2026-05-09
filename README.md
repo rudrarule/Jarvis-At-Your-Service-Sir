@@ -327,6 +327,58 @@ ALLOWED_WHATSAPP_USERS=whatsapp:+91XXXXXXXXXX
 
 This project is for personal use and learning purposes.
 
+
+### 🧠 Future(LangGraph Migration — Toward Fully Agentic Workflows)
+
+The current orchestration layer is event-driven and request/response based.
+
+The next evolution of J.A.R.V.I.S. is migrating toward **LangGraph-powered stateful agentic workflows** capable of reasoning across long-running tasks, adapting dynamically to context, and recovering from failures autonomously.
+
+Planned capabilities include:
+
+* **Persistent workflow state** — Maintain execution context across sessions and interruptions
+* **Conditional reasoning & branching** — Dynamically choose execution paths based on real-world context
+* **Parallel tool orchestration** — Execute independent tools concurrently for lower latency
+* **Dependency-aware execution graphs** — Multi-step planning with ordered task dependencies
+* **Self-correcting retry loops** — Detect tool failures and autonomously retry or reroute execution
+* **Human-in-the-loop confirmations** — Safety-gated approval for destructive or high-impact actions
+* **Multi-agent delegation** — Specialized sub-agents for research, coding, scheduling, and system operations
+
+This transition enables workflows such as:
+
+```text
+"Hey Jarvis, prepare my coding environment"
+
+→ Check current time
+→ Open VS Code + project workspace
+→ Resume preferred coding playlist
+→ Check unread WhatsApp messages
+→ Summarize latest AI news
+→ Detect pending Git tasks
+→ Continue previous workflow state
+
+or to book a ticket of movie From District
+→ Search nearby theatres and available showtimes
+→ Detect preferred theatre and seating preferences from memory
+→ Compare ticket pricing across providers → Suggest best timing based on calendar availability
+→ Open booking page automatically
+→ Select seats intelligently
+→ Ask for payment confirmation
+→ Complete booking workflow → Save booking details into memory
+→ Draft WhatsApp messages for friends/family
+→ Add event to calendar automatically
+```
+
+Future LangGraph orchestration will allow Jarvis to move beyond reactive command execution into:
+
+* long-running reasoning,
+* adaptive planning,
+* contextual decision making,
+* and autonomous multi-step task coordination.
+
+The long-term vision is to transform J.A.R.V.I.S. from an assistant into a continuously reasoning local-first AI operating layer.
+
+
 ---
 
 <p align="center">
