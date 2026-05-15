@@ -67,7 +67,48 @@ COMMUNICATION STYLE:
 - Be detailed but efficient. Aim for 3-5 expressive sentences.
 - Use sophisticated vocabulary (e.g., "indeed," "splendid," "precisely," "I took the liberty of...").
 - NEVER use markdown, bolding, code blocks, or internal tool names.
-- Since you are a voice assistant, optimize for natural, spoken-word cadence."""
+- Since you are a voice assistant, optimize for natural, spoken-word cadence.
+
+BROWSER TOOL PROTOCOL:
+You have access to these browser tools. You MUST call them as proper tool calls, never as raw text or code.
+Available tools: browser_open_url, browser_observe, browser_interact, browser_scroll, browser_get_status.
+
+WORKFLOW — follow these steps in strict order:
+1. NAVIGATE: Call browser_open_url with the full URL (e.g. https://www.google.com).
+2. OBSERVE: Immediately call browser_observe. This returns a numbered list of interactive elements with id, tag, type, text, and context fields. Study the list carefully before acting.
+3. ACT: Call browser_interact with the exact element_id from the observation list.
+   - To type in a search/input field: browser_interact(element_id=ID, action="type", text="your query")
+   - To click a button/link: browser_interact(element_id=ID, action="click")
+4. RE-OBSERVE: After EVERY action, call browser_observe again. The page has changed — old element IDs are invalid.
+5. SCROLL: If the element you need is not in the list, call browser_scroll(direction="down") then browser_observe again. Repeat until found.
+
+SELECTION RULES:
+- ALWAYS prefer the search bar over clicking navigation menus or category links.
+- To find the search bar, look for elements with tag="input" and text containing "search" or a placeholder.
+- When choosing between similar elements (e.g. multiple "Add" buttons), carefully read the 'context' field. The context shows the product name, weight, and price. Match the EXACT price, size, and variant the user asked for.
+- For quantity: Click the correct Add button ONCE, then re-observe and click the "+" button to increase quantity. Never click different Add buttons for the same product.
+
+WHATSAPP TOOLS:
+- whatsapp_check_messages: Check unread messages and missed calls. Use when user asks 'check my messages', 'who texted me'.
+- whatsapp_send_message(contact, message): Send a message. Use when user says 'text mom', 'tell Rahul that...'.
+
+FILE SYSTEM TOOLS:
+- file_read(path): Read a file from the workspace.
+- file_write(path, content): Create or overwrite a file.
+- file_list(path): List files in a directory.
+- file_search(query): Search files by name.
+All paths are relative to the workspace directory. Allowed extensions: .txt, .md, .json, .py.
+
+WEATHER TOOLS:
+- weather_check(location): Get current weather. Leave location empty for local weather.
+
+ANTI-HALLUCINATION RULES:
+- NEVER type or print tool names as plain text. Always invoke them as proper tool calls.
+- NEVER guess element IDs. Only use IDs that appeared in the most recent browser_observe result.
+- NEVER call multiple tools in the same turn if they depend on each other. For example, you MUST wait for the result of browser_observe before you can call browser_interact. Do NOT chain them in a single response.
+- NEVER skip the observe step. If you are unsure what is on the page, observe first.
+- If a tool call fails, observe the page state before retrying.
+- You can chain multiple independent tools together. For example: check weather, then text someone about it, then save a note to a file."""
 
 # ── Tier 1: Regex Fast-Path (0ms) ─────────────────────────
 
@@ -743,7 +784,83 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
             print(f"[CACHE] Skipping stale tool-action cache for: '{user_message[:40]}'")
             del CACHE[user_message]
 
-    # ── Unified Brain Call ──
+    # ── Tier 3 LangGraph ReAct Agent (Multi-Tool) ──
+    langgraph_intents = [
+        # Browser
+        "search", "open", "find", "google", "stock", "browser", "bigbasket",
+        "amazon", "flipkart", "zomato", "swiggy",
+        # WhatsApp
+        "whatsapp", "message", "text", "who messaged", "who texted", "missed call",
+        # File system  
+        "read file", "write file", "save", "create file", "list files", "find file",
+        # Weather
+        "weather", "temperature", "rain", "forecast",
+    ]
+    is_langgraph_task = any(b in msg_lower for b in langgraph_intents)
+    
+    if is_langgraph_task or complex_query:
+        # Use Llama 3.3 70B for all Tier 3 tasks — best tool-calling accuracy
+        selected_model = "us.meta.llama3-3-70b-instruct-v1:0"
+        print(f"\n[Tier3] Routing -> Llama 3.3 70B ({selected_model})")
+        from workflows.master_graph import master_graph_app
+        from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+        from langgraph.errors import GraphRecursionError
+
+        # Translate history to LangChain format
+        lc_messages = [SystemMessage(content=JARVIS_CHAT_PROMPT)]
+        for msg in chat_history:
+            if msg["role"] == "user":
+                lc_messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                lc_messages.append(AIMessage(content=msg["content"]))
+                
+        # The user_message was already appended to history above, so it is in chat_history.
+        # But wait, we appended to `session_history`, but we read `chat_history` earlier.
+        # Let's ensure the latest message is included.
+        if not chat_history or chat_history[-1].get("content") != user_message:
+            lc_messages.append(HumanMessage(content=user_message))
+            
+        try:
+            import time
+            graph_start = time.time()
+            
+            # Max 25 iterations — LangGraph counts agent+tool as 2 steps each
+            final_state = await master_graph_app.ainvoke(
+                {"messages": lc_messages, "iteration": 0}, 
+                {
+                    "recursion_limit": 25,
+                    "configurable": {
+                        "model_id": selected_model,
+                        "thread_id": session_id  # MemorySaver persistence key
+                    }
+                }
+            )
+            
+            elapsed = round(time.time() - graph_start, 1)
+            print(f"[Tier3] LangGraph completed in {elapsed}s")
+            
+            final_message = final_state["messages"][-1].content
+            if isinstance(final_message, list):
+                # Sometimes Bedrock returns a list of blocks
+                final_message = " ".join(b.get("text", "") for b in final_message if isinstance(b, dict) and "text" in b)
+            
+            print(f"[Tier3] LangGraph completed successfully.")
+            append_message(session_id, "assistant", final_message)
+            return final_message
+            
+        except GraphRecursionError:
+            print("[Graph] Max iteration limit reached")
+            fallback_msg = "I could not complete the task safely within the allowed reasoning steps."
+            append_message(session_id, "assistant", fallback_msg)
+            return fallback_msg
+            
+        except Exception as e:
+            import traceback
+            print(f"[Graph ERROR] ReAct loop failed: {e}")
+            traceback.print_exc()
+            print("[Tier3] Falling back to legacy routing...")
+
+    # ── Unified Brain Call (Legacy Routing) ──
     text_reply = await _route_hybrid_llm(
         user_message=user_message,
         session_id=session_id,

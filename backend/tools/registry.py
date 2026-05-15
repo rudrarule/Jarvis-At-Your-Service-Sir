@@ -455,8 +455,15 @@ async def execute_tool(tool_name: str, arguments: dict) -> str:
         whatsapp_tools = ["whatsapp_briefing", "whatsapp_unread", "whatsapp_missed_calls", "whatsapp_send"]
         
         if tool_name in ["browser_search", "open_url", "get_weather"] + file_system_tools + system_control_tools + whatsapp_tools:
+            if isinstance(result, dict):
+                import json
+                return json.dumps(result, indent=2)
             return result
 
+        if isinstance(result, dict):
+            import json
+            return json.dumps(result, indent=2)
+            
         # Generic fallback for future tools
         return str(result)
 
