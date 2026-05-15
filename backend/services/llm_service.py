@@ -83,6 +83,7 @@ WORKFLOW — follow these steps in strict order:
 5. SCROLL: If the element you need is not in the list, call browser_scroll(direction="down") then browser_observe again. Repeat until found.
 
 SELECTION RULES:
+- For general web searches, ALWAYS use https://duckduckgo.com instead of Google to avoid bot protection blocks.
 - ALWAYS prefer the search bar over clicking navigation menus or category links.
 - To find the search bar, look for elements with tag="input" and text containing "search" or a placeholder.
 - When choosing between similar elements (e.g. multiple "Add" buttons), carefully read the 'context' field. The context shows the product name, weight, and price. Match the EXACT price, size, and variant the user asked for.

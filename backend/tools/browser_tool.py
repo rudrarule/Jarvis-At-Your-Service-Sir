@@ -35,20 +35,18 @@ class BrowserStateManager:
                 cls._playwright = await async_playwright().start()
             
             headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
+            user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "browser_user_data"))
             
-            if not cls._browser:
-                cls._browser = await cls._playwright.chromium.launch(
+            if not cls._context:
+                cls._context = await cls._playwright.chromium.launch_persistent_context(
+                    user_data_dir=user_data_dir,
                     headless=headless,
+                    viewport={'width': 1280, 'height': 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox", "--disable-blink-features=AutomationControlled"]
                 )
             
-            if not cls._context:
-                cls._context = await cls._browser.new_context(
-                    viewport={'width': 1280, 'height': 800},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
-            
-            cls._page = await cls._context.new_page()
+            cls._page = cls._context.pages[0] if cls._context.pages else await cls._context.new_page()
             
             # Anti-detection stealth scripts
             await cls._page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -61,7 +59,7 @@ class BrowserStateManager:
             if cls._context:
                 await cls._context.close()
                 cls._context = None
-            if cls._browser:
+            if cls._browser: # Keep for backwards compatibility if needed
                 await cls._browser.close()
                 cls._browser = None
             if cls._playwright:

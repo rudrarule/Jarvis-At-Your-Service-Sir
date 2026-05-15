@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 from tools.browser_tool import (
     open_url, get_current_url, get_page_title, 
     extract_visible_text, wait_for_navigation,
-    inject_element_markers, interact_by_id, scroll_page
+    inject_element_markers, interact_by_id, scroll_page, go_back
 )
 from tools.whatsapp_tool import (
     whatsapp_briefing as _wa_briefing,
@@ -105,6 +105,14 @@ async def browser_get_status() -> dict:
         }
     }
 
+@tool
+async def browser_go_back() -> dict:
+    """
+    Clicks the browser's 'Back' button to return to the previous page.
+    Use this if you clicked the wrong link, encountered an error, or need to return to search results.
+    """
+    return await go_back()
+
 
 # ═══════════════════════════════════════════════════════════
 # WHATSAPP TOOLS
@@ -198,7 +206,8 @@ BROWSER_TOOLS = [
     browser_interact,
     browser_scroll,
     browser_observe,
-    browser_get_status
+    browser_get_status,
+    browser_go_back
 ]
 
 WHATSAPP_TOOLS = [
