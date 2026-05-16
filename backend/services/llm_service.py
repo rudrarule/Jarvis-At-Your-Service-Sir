@@ -81,6 +81,7 @@ WORKFLOW — follow these steps in strict order:
    - To click a button/link: browser_interact(element_id=ID, action="click")
 4. RE-OBSERVE: After EVERY action, call browser_observe again. The page has changed — old element IDs are invalid.
 5. SCROLL: If the element you need is not in the list, call browser_scroll(direction="down") then browser_observe again. Repeat until found.
+6. DEEP DIVE: If the search results page (snippets) does not contain the answer, click the most relevant result (usually element #1 or #2) to open the full website and find the information inside.
 
 SELECTION RULES:
 - For general web searches, ALWAYS use https://duckduckgo.com instead of Google to avoid bot protection blocks.

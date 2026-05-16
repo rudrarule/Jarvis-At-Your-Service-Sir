@@ -4,6 +4,7 @@ Powered by async Playwright. Maintains a persistent stateful browser session
 to support LangGraph ReAct agent loops and multi-step workflows.
 """
 import asyncio
+import base64
 import os
 import urllib.parse
 from typing import Any, Dict, List, Optional
@@ -66,6 +67,19 @@ class BrowserStateManager:
                 await cls._playwright.stop()
                 cls._playwright = None
             cls._page = None
+
+# --- Screenshot for Vision ---
+
+async def take_screenshot() -> dict:
+    """Takes a screenshot of the current browser viewport and returns it as base64 PNG."""
+    try:
+        page = await BrowserStateManager.get_page()
+        screenshot_bytes = await page.screenshot(type="png")
+        b64_image = base64.b64encode(screenshot_bytes).decode("utf-8")
+        print(f"[Screenshot] Captured viewport ({len(screenshot_bytes)} bytes)")
+        return _format_response(True, "take_screenshot", "Screenshot captured", {"image_base64": b64_image})
+    except Exception as e:
+        return _format_response(False, "take_screenshot", "Failed to capture screenshot", error=str(e))
 
 # --- Navigation & Control ---
 
@@ -397,13 +411,7 @@ async def get_dom_snapshot() -> dict:
     except Exception as e:
         return _format_response(False, "get_dom_snapshot", "Failed to extract DOM", error=str(e))
 
-async def take_screenshot(path: str = "screenshot.png") -> dict:
-    try:
-        page = await BrowserStateManager.get_page()
-        await page.screenshot(path=path)
-        return _format_response(True, "take_screenshot", f"Screenshot saved to {path}", {"path": path})
-    except Exception as e:
-        return _format_response(False, "take_screenshot", "Failed to take screenshot", error=str(e))
+
 
 # --- Waiting & Synchronization ---
 

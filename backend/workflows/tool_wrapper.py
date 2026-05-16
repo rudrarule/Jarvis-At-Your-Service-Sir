@@ -7,7 +7,8 @@ from langchain_core.tools import tool
 from tools.browser_tool import (
     open_url, get_current_url, get_page_title, 
     extract_visible_text, wait_for_navigation,
-    inject_element_markers, interact_by_id, scroll_page, go_back
+    inject_element_markers, interact_by_id, scroll_page, go_back,
+    take_screenshot
 )
 from tools.whatsapp_tool import (
     whatsapp_briefing as _wa_briefing,
@@ -59,13 +60,15 @@ async def browser_scroll(direction: str = "down") -> dict:
 async def browser_observe() -> dict:
     """
     Extracts a compressed, structured observation of the current webpage.
-    Returns the page title, URL, summarized visible text, and a numbered list of interactive elements.
+    Returns the page title, URL, summarized visible text, a numbered list of interactive elements,
+    and a base64 screenshot of the current viewport for visual verification.
     You MUST use the returned element IDs with browser_interact to click or type.
     """
     url_res = await get_current_url()
     title_res = await get_page_title()
     text_res = await extract_visible_text()
     markers_res = await inject_element_markers()
+    screenshot_res = await take_screenshot()
     
     visible_text = text_res.get("data", {}).get("text", "")
     compressed_text = visible_text[:1000] + ("..." if len(visible_text) > 1000 else "")
@@ -76,15 +79,21 @@ async def browser_observe() -> dict:
     links = [e for e in elements_list if e.get("tag") == "a"]
     print(f"[Observation] {len(elements_list)} elements: {len(inputs)} inputs, {len(buttons)} buttons, {len(links)} links")
     
+    # Include screenshot if captured successfully
+    screenshot_b64 = None
+    if screenshot_res.get("success") and isinstance(screenshot_res.get("data"), dict):
+        screenshot_b64 = screenshot_res["data"].get("image_base64")
+    
     return {
         "success": True,
         "action": "browser_observe",
-        "observation": "Extracted structured page data and interactive element IDs",
+        "observation": "Extracted structured page data, interactive element IDs, and viewport screenshot",
         "data": {
             "url": (url_res.get("data") or {}).get("url", ""),
             "title": (title_res.get("data") or {}).get("title", ""),
             "summary": compressed_text,
-            "interactive_elements": (markers_res.get("data") or {}).get("elements", [])
+            "interactive_elements": (markers_res.get("data") or {}).get("elements", []),
+            "screenshot_base64": screenshot_b64
         }
     }
 
