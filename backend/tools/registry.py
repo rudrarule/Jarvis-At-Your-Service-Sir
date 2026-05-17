@@ -4,6 +4,10 @@ Maps tool names → executable functions + JSON schemas for LLM tool calling.
 """
 import asyncio
 import inspect
+import json
+import time
+
+from services.dashboard_event_service import emit_dashboard_event
 
 from tools.music_tool import play_music
 from tools.browser_tool import browser_search, open_url
@@ -428,12 +432,24 @@ async def execute_tool(tool_name: str, arguments: dict) -> str:
     Handles both sync and async tool functions.
     Returns a Jarvis-style confirmation string.
     """
+    started = time.perf_counter()
     func = TOOL_FUNCTIONS.get(tool_name)
     if not func:
+        await emit_dashboard_event(
+            "tool.error",
+            {"tool": tool_name, "error": "unknown_tool"},
+            source="tools",
+            level="warning",
+        )
         return f"I'm sorry, sir. I don't recognize the tool '{tool_name}'."
 
     try:
         sanitized_args = _sanitize_arguments(func, arguments)
+        await emit_dashboard_event(
+            "tool.started",
+            {"tool": tool_name, "arguments": sanitized_args},
+            source="tools",
+        )
         
         # Check if function is async
         if inspect.iscoroutinefunction(func):
@@ -445,28 +461,48 @@ async def execute_tool(tool_name: str, arguments: dict) -> str:
         if tool_name == "play_music":
             title, url = result
             if url:
-                return f"Certainly, sir. Playing {title} on YouTube now."
+                response = f"Certainly, sir. Playing {title} on YouTube now."
             else:
-                return "I apologize, sir. I couldn't find that song on YouTube."
+                response = "I apologize, sir. I couldn't find that song on YouTube."
 
         # Browser, URL opener, Weather, file system, WhatsApp, and system control tools return formatted strings
-        file_system_tools = ["read_file", "write_file", "append_file", "list_directory", "search_files", "search_in_files"]
-        system_control_tools = ["open_app", "close_app", "open_folder", "lock_system", "shutdown_system", "restart_system", "list_running_apps"]
-        whatsapp_tools = ["whatsapp_briefing", "whatsapp_unread", "whatsapp_missed_calls", "whatsapp_send"]
-        
-        if tool_name in ["browser_search", "open_url", "get_weather"] + file_system_tools + system_control_tools + whatsapp_tools:
-            if isinstance(result, dict):
-                import json
-                return json.dumps(result, indent=2)
-            return result
-
-        if isinstance(result, dict):
-            import json
-            return json.dumps(result, indent=2)
+        else:
+            file_system_tools = ["read_file", "write_file", "append_file", "list_directory", "search_files", "search_in_files"]
+            system_control_tools = ["open_app", "close_app", "open_folder", "lock_system", "shutdown_system", "restart_system", "list_running_apps"]
+            whatsapp_tools = ["whatsapp_briefing", "whatsapp_unread", "whatsapp_missed_calls", "whatsapp_send"]
             
-        # Generic fallback for future tools
-        return str(result)
+            if tool_name in ["browser_search", "open_url", "get_weather"] + file_system_tools + system_control_tools + whatsapp_tools:
+                if isinstance(result, dict):
+                    response = json.dumps(result, indent=2)
+                else:
+                    response = result
+            elif isinstance(result, dict):
+                response = json.dumps(result, indent=2)
+            else:
+                # Generic fallback for future tools
+                response = str(result)
 
+        await emit_dashboard_event(
+            "tool.completed",
+            {
+                "tool": tool_name,
+                "duration_ms": round((time.perf_counter() - started) * 1000),
+                "result_preview": response,
+            },
+            source="tools",
+        )
+        return response
+            
     except Exception as e:
         print(f"[TOOL ERROR] Tool execution error ({tool_name}): {e}")
+        await emit_dashboard_event(
+            "tool.failed",
+            {
+                "tool": tool_name,
+                "duration_ms": round((time.perf_counter() - started) * 1000),
+                "error": f"{type(e).__name__}: {e}",
+            },
+            source="tools",
+            level="error",
+        )
         return f"I encountered an error executing {tool_name}, sir."

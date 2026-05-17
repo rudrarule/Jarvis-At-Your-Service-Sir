@@ -600,6 +600,76 @@ async def _call_maverick_vision(image_b64: str, user_message: str) -> str | None
         return None
 
 
+async def _call_maverick_vision_chat(chat_history: list[dict], user_message: str, overlay_image_b64: str | None = None) -> str:
+    """
+    Executes a direct, multi-turn visual chat conversation with Llama 4 Maverick (Vision).
+    NO tools are bound, and NO agent graph is used, entirely eliminating tool hallucinations
+    and agent loop overhead for visual overlay Q&A.
+    """
+    from botocore.exceptions import ClientError
+    import asyncio
+    
+    try:
+        client = _get_bedrock_client()
+        
+        # Translate history to Bedrock Converse messages format
+        bedrock_messages = []
+        for i, msg in enumerate(chat_history):
+            role = msg["role"]
+            content = msg["content"]
+            
+            # Map role
+            if role == "assistant":
+                role = "assistant"
+            else:
+                role = "user"
+                
+            # If it's the first message and we have an image, inject it
+            if i == 0 and overlay_image_b64:
+                import base64
+                image_bytes = base64.b64decode(overlay_image_b64)
+                content_list = [
+                    {
+                        "image": {
+                            "format": "jpeg",
+                            "source": {"bytes": image_bytes}
+                        }
+                    },
+                    {"text": str(content)}
+                ]
+            else:
+                content_list = [{"text": str(content)}]
+                
+            bedrock_messages.append({
+                "role": role,
+                "content": content_list
+            })
+            
+        print(f"[Vision Chat] Routing strictly to Llama 4 Maverick ({CLAUDE_MODEL_ID}) — no tools, no agent loops.")
+        
+        response = await asyncio.to_thread(
+            client.converse,
+            modelId=CLAUDE_MODEL_ID,
+            system=[{"text": JARVIS_CHAT_PROMPT}],
+            messages=bedrock_messages,
+            inferenceConfig={"maxTokens": 1024, "temperature": 0.3}
+        )
+        
+        message = response.get("output", {}).get("message", {})
+        content_blocks = message.get("content", [])
+        text_blocks = [block["text"] for block in content_blocks if "text" in block]
+        reply = "\n".join(text_blocks).strip()
+        
+        print(f"[Vision Chat] Received visual response successfully.")
+        return reply
+        
+    except Exception as e:
+        import traceback
+        print(f"[Vision Chat ERROR] Direct Maverick call failed: {e}")
+        traceback.print_exc()
+        return "Sir, I encountered an issue accessing my visual reasoning system."
+
+
 # ── Main Entry Point ──────────────────────────────────────
 
 async def _route_hybrid_llm(
@@ -696,6 +766,27 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
     """
     from services.session_service import append_message, get_session_history
     from workflows.wa_send_workflow import get_active_workflow
+
+    # ── Dedicated Visual Q&A Overlay Route (Maverick Vision Only, No Tools) ──
+    if session_id == "overlay":
+        append_message(session_id, "user", user_message)
+        chat_history = get_session_history(session_id, limit=6)
+        
+        overlay_image_b64 = None
+        try:
+            from services.overlay_context_service import list_overlay_sessions, get_overlay_context
+            sessions = list_overlay_sessions(limit=1)
+            if sessions:
+                ctx = get_overlay_context(sessions[0]["context_id"])
+                if ctx and ctx.get("image_base64"):
+                    overlay_image_b64 = ctx["image_base64"]
+                    print(f"[Vision] Loaded active crop context ({len(overlay_image_b64)} bytes) for Maverick.")
+        except Exception as e:
+            print(f"[Vision ERROR] Failed to load crop context for overlay: {e}")
+            
+        reply = await _call_maverick_vision_chat(chat_history, user_message, overlay_image_b64)
+        append_message(session_id, "assistant", reply)
+        return reply
 
     # ── Workflow Safety & Continuation ──
     from datetime import datetime, timedelta

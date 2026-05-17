@@ -35,6 +35,10 @@ class BrowserStateManager:
             if not cls._playwright:
                 cls._playwright = await async_playwright().start()
             
+            from dotenv import load_dotenv
+            env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+            load_dotenv(env_path, override=True)
+            
             headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
             user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "browser_user_data"))
             
@@ -58,13 +62,22 @@ class BrowserStateManager:
     async def close_all(cls):
         async with cls._lock:
             if cls._context:
-                await cls._context.close()
+                try:
+                    await cls._context.close()
+                except Exception:
+                    pass
                 cls._context = None
             if cls._browser: # Keep for backwards compatibility if needed
-                await cls._browser.close()
+                try:
+                    await cls._browser.close()
+                except Exception:
+                    pass
                 cls._browser = None
             if cls._playwright:
-                await cls._playwright.stop()
+                try:
+                    await cls._playwright.stop()
+                except Exception:
+                    pass
                 cls._playwright = None
             cls._page = None
 

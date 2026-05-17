@@ -100,6 +100,21 @@
     );
     pointer-events: none;
   }
+
+  .dashboard-grid {
+    background-image:
+      linear-gradient(hsl(var(--primary) / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--primary) / 0.04) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: radial-gradient(circle at center, black, transparent 78%);
+  }
+
+  .retina-grid {
+    background-image:
+      linear-gradient(hsl(var(--primary) / 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--primary) / 0.12) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
 }
 
 @layer utilities {

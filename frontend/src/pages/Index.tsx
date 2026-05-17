@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
+import { LayoutDashboard } from "lucide-react";
+import { Link } from "react-router-dom";
 import ParticleBackground from "@/components/jarvis/ParticleBackground";
 import AICore from "@/components/jarvis/AICore";
 import Waveform from "@/components/jarvis/Waveform";
@@ -145,6 +147,16 @@ const Index = () => {
         </motion.div>
 
         <ModeSwitch mode={mode} onToggle={toggleMode} />
+      </div>
+
+      <div className="absolute top-20 right-6 z-20">
+        <Link
+          to="/dashboard"
+          className="glass-panel group flex items-center gap-2 rounded-md px-4 py-2 font-display text-[10px] tracking-[0.22em] text-primary transition-all hover:border-primary/60 hover:bg-primary/10"
+        >
+          <LayoutDashboard size={14} className="transition-transform group-hover:scale-110" />
+          Dashboard
+        </Link>
       </div>
 
       {/* Main content area */}

@@ -47,41 +47,45 @@ async def store_memory(text: str) -> bool:
     if not is_important_message(text):
         return False
 
-    # Generate embedding
-    embedding = await generate_embedding(text)
+    try:
+        # Generate embedding
+        embedding = await generate_embedding(text)
 
-    # Check for near-duplicates
-    if collection.count() > 0:
-        results = collection.query(
-            query_embeddings=[embedding],
-            n_results=1,
+        # Check for near-duplicates
+        if collection.count() > 0:
+            results = collection.query(
+                query_embeddings=[embedding],
+                n_results=1,
+            )
+            if results["distances"] and results["distances"][0]:
+                # ChromaDB cosine distance: 0 = identical, 2 = opposite
+                # similarity = 1 - (distance / 2)
+                distance = results["distances"][0][0]
+                similarity = 1 - (distance / 2)
+                if similarity >= DUPLICATE_THRESHOLD:
+                    print(f"[MEM] Skipped duplicate (similarity={similarity:.2f}): {text[:50]}...")
+                    return False
+
+        # Enforce max entries — evict oldest if at capacity
+        if collection.count() >= MAX_MEMORIES:
+            _evict_oldest()
+
+        # Store in ChromaDB
+        doc_id = str(uuid.uuid4())
+        collection.add(
+            ids=[doc_id],
+            documents=[text],
+            embeddings=[embedding],
+            metadatas=[{
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "source": "chat",
+            }],
         )
-        if results["distances"] and results["distances"][0]:
-            # ChromaDB cosine distance: 0 = identical, 2 = opposite
-            # similarity = 1 - (distance / 2)
-            distance = results["distances"][0][0]
-            similarity = 1 - (distance / 2)
-            if similarity >= DUPLICATE_THRESHOLD:
-                print(f"[MEM] Skipped duplicate (similarity={similarity:.2f}): {text[:50]}...")
-                return False
-
-    # Enforce max entries — evict oldest if at capacity
-    if collection.count() >= MAX_MEMORIES:
-        _evict_oldest()
-
-    # Store in ChromaDB
-    doc_id = str(uuid.uuid4())
-    collection.add(
-        ids=[doc_id],
-        documents=[text],
-        embeddings=[embedding],
-        metadatas=[{
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "source": "chat",
-        }],
-    )
-    print(f"[MEM] Memory stored: {text[:60]}...")
-    return True
+        print(f"[MEM] Memory stored: {text[:60]}...")
+        return True
+    except Exception as e:
+        print(f"[MEM WARNING] Failed to store memory: {e}")
+        return False
 
 
 async def retrieve_memory(query: str, n_results: int = 3) -> str:
@@ -89,67 +93,81 @@ async def retrieve_memory(query: str, n_results: int = 3) -> str:
     Retrieve the most relevant memories for a given query.
     Returns a formatted string of relevant memories, or empty string.
     """
-    if collection.count() == 0:
+    try:
+        if collection.count() == 0:
+            return ""
+
+        query_embedding = await generate_embedding(query)
+
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=min(n_results, collection.count()),
+        )
+
+        if not results["documents"] or not results["documents"][0]:
+            return ""
+
+        # Build context string from retrieved memories
+        memories = results["documents"][0]
+        return "\n".join(f"- {mem}" for mem in memories)
+    except Exception as e:
+        print(f"[MEM WARNING] Failed to retrieve memories: {e}")
         return ""
-
-    query_embedding = await generate_embedding(query)
-
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=min(n_results, collection.count()),
-    )
-
-    if not results["documents"] or not results["documents"][0]:
-        return ""
-
-    # Build context string from retrieved memories
-    memories = results["documents"][0]
-    return "\n".join(f"- {mem}" for mem in memories)
 
 
 def get_all_memories() -> list[dict]:
     """Return all stored memories (for /memory API endpoint)."""
-    if collection.count() == 0:
-        return []
+    try:
+        if collection.count() == 0:
+            return []
 
-    all_data = collection.get(include=["documents", "metadatas"])
-    memories = []
-    for doc, meta in zip(all_data["documents"], all_data["metadatas"]):
-        memories.append({
-            "text": doc,
-            "timestamp": meta.get("timestamp", ""),
-        })
-    return memories
+        all_data = collection.get(include=["documents", "metadatas"])
+        memories = []
+        for doc, meta in zip(all_data["documents"], all_data["metadatas"]):
+            memories.append({
+                "text": doc,
+                "timestamp": meta.get("timestamp", ""),
+            })
+        return memories
+    except Exception as e:
+        print(f"[MEM WARNING] Failed to get all memories: {e}")
+        return []
 
 
 def clear_all_memories() -> None:
     """Delete all memories by recreating the collection."""
-    global collection
-    client.delete_collection("jarvis_memory")
-    collection = client.get_or_create_collection(
-        name="jarvis_memory",
-        metadata={"hnsw:space": "cosine"},
-    )
-    # Update the module-level reference in db.chroma_client too
-    import db.chroma_client as _db
-    _db.collection = collection
-    print("[MEM] All memories wiped from ChromaDB.")
+    try:
+        global collection
+        client.delete_collection("jarvis_memory")
+        collection = client.get_or_create_collection(
+            name="jarvis_memory",
+            metadata={"hnsw:space": "cosine"},
+        )
+        # Update the module-level reference in db.chroma_client too
+        import db.chroma_client as _db
+        _db.collection = collection
+        print("[MEM] All memories wiped from ChromaDB.")
+    except Exception as e:
+        print(f"[MEM WARNING] Failed to clear memories: {e}")
 
 
 def _evict_oldest() -> None:
     """Remove the oldest memory entry to make room."""
-    all_data = collection.get(include=["metadatas"])
-    if not all_data["ids"]:
-        return
+    try:
+        all_data = collection.get(include=["metadatas"])
+        if not all_data["ids"]:
+            return
 
-    # Find the entry with the oldest timestamp
-    oldest_idx = 0
-    oldest_ts = all_data["metadatas"][0].get("timestamp", "")
-    for i, meta in enumerate(all_data["metadatas"]):
-        ts = meta.get("timestamp", "")
-        if ts < oldest_ts:
-            oldest_ts = ts
-            oldest_idx = i
+        # Find the entry with the oldest timestamp
+        oldest_idx = 0
+        oldest_ts = all_data["metadatas"][0].get("timestamp", "")
+        for i, meta in enumerate(all_data["metadatas"]):
+            ts = meta.get("timestamp", "")
+            if ts < oldest_ts:
+                oldest_ts = ts
+                oldest_idx = i
 
-    collection.delete(ids=[all_data["ids"][oldest_idx]])
-    print(f"[MEM] Evicted oldest memory to stay under {MAX_MEMORIES} limit.")
+        collection.delete(ids=[all_data["ids"][oldest_idx]])
+        print(f"[MEM] Evicted oldest memory to stay under {MAX_MEMORIES} limit.")
+    except Exception as e:
+        print(f"[MEM WARNING] Failed to evict oldest memory: {e}")

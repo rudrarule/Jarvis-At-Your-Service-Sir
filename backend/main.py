@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import time
 
 # Windows-specific: ProactorEventLoop is required for subprocesses (Playwright, etc.)
 if sys.platform == 'win32':
@@ -8,14 +9,41 @@ if sys.platform == 'win32':
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Form, UploadFile, File
+from fastapi import FastAPI, Form, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, PlainTextResponse
+from fastapi.responses import Response, PlainTextResponse, StreamingResponse
 
 from models.chat_model import ChatRequest, ChatResponse, TTSRequest, MusicRequest, AppRequest
+from models.overlay_model import OverlayFollowUpRequest
 from services.llm_service import generate_response
 from services.memory_service import get_all_memories, clear_all_memories
 from services import text_to_speech_service
+from services.overlay_context_service import (
+    clear_overlay_history,
+    get_overlay_context_public,
+    list_overlay_history,
+    list_overlay_sessions,
+)
+from services.overlay_ocr_service import OverlayOcrUnavailable, extract_overlay_text
+from services.overlay_service import OverlayCaptureRejected, ask_about_overlay_region, ask_overlay_follow_up
+from services.dashboard_event_service import (
+    emit_dashboard_event,
+    get_dashboard_history,
+    get_dashboard_snapshot,
+    get_system_health,
+    subscribe_dashboard_events,
+    unsubscribe_dashboard_events,
+)
+from services.mission_store import (
+    complete_mission,
+    create_mission,
+    fail_mission,
+    get_mission,
+    get_mission_events,
+    list_missions,
+    reset_current_mission_id,
+    set_current_mission_id,
+)
 from services.whatsapp_service import (
     send_whatsapp_message,
     is_busy,
@@ -30,6 +58,11 @@ from services import whatsapp_baileys_service as wa_baileys
 async def lifespan(app: FastAPI):
     """Warm local subsystems while keeping startup responsive."""
     asyncio.create_task(text_to_speech_service.warm_start())
+    await emit_dashboard_event(
+        "system.startup",
+        {"service": "Holo Core Nexus API", "version": "0.3.0"},
+        source="api",
+    )
     yield
 
 
@@ -60,11 +93,254 @@ async def health_check():
     return {"status": "healthy", "modules": {"neural_net": True, "voice": True, "memory": "chromadb", "whatsapp": True, "automation": False}}
 
 
+@app.get("/dashboard/snapshot")
+async def dashboard_snapshot():
+    return get_dashboard_snapshot()
+
+
+@app.get("/dashboard/events")
+async def dashboard_events(limit: int = 50):
+    return {"events": get_dashboard_history(limit)}
+
+
+@app.get("/dashboard/health")
+async def dashboard_health():
+    return get_system_health()
+
+
+@app.get("/dashboard/missions")
+async def dashboard_missions(limit: int = 20):
+    return {"missions": list_missions(limit)}
+
+
+@app.get("/dashboard/missions/{mission_id}")
+async def dashboard_mission_detail(mission_id: str):
+    mission = get_mission(mission_id)
+    if not mission:
+        return {"mission": None, "events": []}
+    return {"mission": mission, "events": get_mission_events(mission_id)}
+
+
+@app.websocket("/dashboard/ws")
+async def dashboard_websocket(websocket: WebSocket):
+    await websocket.accept()
+    queue = subscribe_dashboard_events()
+    try:
+        await websocket.send_json({"type": "dashboard.snapshot", "payload": get_dashboard_snapshot()})
+        await emit_dashboard_event("dashboard.client_connected", {"subscribers": get_dashboard_snapshot()["subscribers"]}, source="dashboard")
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=5)
+                await websocket.send_json(event)
+            except asyncio.TimeoutError:
+                await websocket.send_json(
+                    {
+                        "type": "system.health",
+                        "source": "api",
+                        "level": "info",
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "payload": get_system_health(),
+                    }
+                )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        unsubscribe_dashboard_events(queue)
+        await emit_dashboard_event("dashboard.client_disconnected", {"subscribers": get_dashboard_snapshot()["subscribers"]}, source="dashboard")
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     """Send a message to J.A.R.V.I.S. Tool calls are handled natively by the LLM."""
-    reply = await generate_response(request.message, request.session_id)
+    started = time.perf_counter()
+    mission = create_mission(request.session_id, request.message)
+    mission_id = mission["id"]
+    mission_token = set_current_mission_id(mission_id)
+    await emit_dashboard_event(
+        "mission.started",
+        {"mission_id": mission_id, "session_id": request.session_id, "mission": mission},
+        source="mission",
+    )
+    await emit_dashboard_event(
+        "agent.request",
+        {"mission_id": mission_id, "session_id": request.session_id, "message": request.message},
+        source="chat",
+    )
+    try:
+        reply = await generate_response(request.message, request.session_id)
+    except Exception as exc:
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        failed = fail_mission(mission_id, f"{type(exc).__name__}: {exc}", elapsed_ms)
+        await emit_dashboard_event(
+            "agent.error",
+            {"mission_id": mission_id, "session_id": request.session_id, "error": f"{type(exc).__name__}: {exc}"},
+            source="chat",
+            level="error",
+        )
+        await emit_dashboard_event(
+            "mission.updated",
+            {"mission_id": mission_id, "session_id": request.session_id, "mission": failed},
+            source="mission",
+            level="error",
+        )
+        reset_current_mission_id(mission_token)
+        raise
+
+    elapsed_ms = round((time.perf_counter() - started) * 1000)
+    completed = complete_mission(mission_id, reply, elapsed_ms)
+    await emit_dashboard_event(
+        "agent.response",
+        {"mission_id": mission_id, "session_id": request.session_id, "duration_ms": elapsed_ms, "reply": reply},
+        source="chat",
+    )
+    await emit_dashboard_event(
+        "mission.updated",
+        {"mission_id": mission_id, "session_id": request.session_id, "mission": completed},
+        source="mission",
+    )
+    reset_current_mission_id(mission_token)
     return {"reply": reply}
+
+
+@app.post("/overlay/ask")
+async def overlay_ask(
+    image: UploadFile = File(...),
+    question: str = Form(...),
+    session_id: str = Form("overlay"),
+    screen_name: str | None = Form(None),
+    app_name: str | None = Form(None),
+    process_name: str | None = Form(None),
+    process_path: str | None = Form(None),
+    window_title: str | None = Form(None),
+    region_x: int | None = Form(None),
+    region_y: int | None = Form(None),
+    region_width: int | None = Form(None),
+    region_height: int | None = Form(None),
+    device_pixel_ratio: float | None = Form(None),
+):
+    """Analyze a user-selected screen region captured by the desktop overlay."""
+    image_bytes = await image.read()
+    try:
+        return await ask_about_overlay_region(
+            image_bytes=image_bytes,
+            question=question,
+            session_id=session_id,
+            content_type=image.content_type,
+            metadata={
+                "screen_name": screen_name,
+                "app_name": app_name,
+                "process_name": process_name,
+                "process_path": process_path,
+                "window_title": window_title,
+                "region_x": region_x,
+                "region_y": region_y,
+                "region_width": region_width,
+                "region_height": region_height,
+                "device_pixel_ratio": device_pixel_ratio,
+            },
+        )
+    except OverlayCaptureRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/overlay/ask/stream")
+async def overlay_ask_stream(
+    image: UploadFile = File(...),
+    question: str = Form(...),
+    session_id: str = Form("overlay"),
+    screen_name: str | None = Form(None),
+    app_name: str | None = Form(None),
+    process_name: str | None = Form(None),
+    process_path: str | None = Form(None),
+    window_title: str | None = Form(None),
+    region_x: int | None = Form(None),
+    region_y: int | None = Form(None),
+    region_width: int | None = Form(None),
+    region_height: int | None = Form(None),
+    device_pixel_ratio: float | None = Form(None),
+):
+    """SSE-compatible overlay ask endpoint. Emits status now and final answer when ready."""
+    image_bytes = await image.read()
+
+    async def stream():
+        import json
+
+        yield "event: status\ndata: {\"status\":\"analyzing\"}\n\n"
+        try:
+            result = await ask_about_overlay_region(
+                image_bytes=image_bytes,
+                question=question,
+                session_id=session_id,
+                content_type=image.content_type,
+                metadata={
+                    "screen_name": screen_name,
+                    "app_name": app_name,
+                    "process_name": process_name,
+                    "process_path": process_path,
+                    "window_title": window_title,
+                    "region_x": region_x,
+                    "region_y": region_y,
+                    "region_width": region_width,
+                    "region_height": region_height,
+                    "device_pixel_ratio": device_pixel_ratio,
+                },
+            )
+            yield f"event: final\ndata: {json.dumps(result, ensure_ascii=True)}\n\n"
+        except Exception as exc:
+            payload = {"error": str(exc)}
+            yield f"event: error\ndata: {json.dumps(payload, ensure_ascii=True)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.post("/overlay/follow-up")
+async def overlay_follow_up(request: OverlayFollowUpRequest):
+    try:
+        return await ask_overlay_follow_up(
+            context_id=request.context_id,
+            question=request.question,
+            session_id=request.session_id,
+        )
+    except OverlayCaptureRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/overlay/ocr")
+async def overlay_ocr(image: UploadFile = File(...)):
+    image_bytes = await image.read()
+    try:
+        return extract_overlay_text(image_bytes)
+    except OverlayOcrUnavailable as exc:
+        return {"text": "", "engine": None, "character_count": 0, "available": False, "detail": str(exc)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/overlay/history")
+async def overlay_history(limit: int = 30):
+    history = list_overlay_history(limit)
+    return {"history": history, "count": len(history)}
+
+
+@app.get("/overlay/sessions")
+async def overlay_sessions(limit: int = 30):
+    sessions = list_overlay_sessions(limit)
+    return {"sessions": sessions, "count": len(sessions)}
+
+
+@app.get("/overlay/session/{context_id}")
+async def overlay_session_detail(context_id: str):
+    session = get_overlay_context_public(context_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Overlay session not found.")
+    return {"session": session}
+
+
+@app.delete("/overlay/history")
+async def overlay_history_clear():
+    clear_overlay_history()
+    return {"status": "cleared"}
 
 
 @app.post("/tts")
@@ -380,3 +656,6 @@ async def wa_clear_unread(chat_id: str = Form(None)):
 async def wa_clear_calls():
     """Clear all missed call records."""
     return await wa_baileys.clear_missed_calls()
+
+
+# Dynamic Uvicorn hot-reload trigger after .env update

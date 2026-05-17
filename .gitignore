@@ -68,6 +68,8 @@ dist-ssr
 **/workspace/
 backend/browser_user_data/
 backend/screenshot.png
+backend/data/*.sqlite3
+backend/data/*.sqlite3-*
 *.png
 *.jpg
 *.jpeg

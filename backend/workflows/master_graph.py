@@ -8,7 +8,7 @@ import re
 import json
 import uuid
 import os
-import base64
+import copy
 from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -24,6 +24,15 @@ from workflows.tool_wrapper import ALL_TOOLS
 # Avoids re-instantiating ChatBedrockConverse on every graph iteration.
 # Each unique model_id gets one cached instance.
 _llm_cache: dict[str, ChatBedrockConverse] = {}
+
+
+def _clone_message(msg: BaseMessage) -> BaseMessage:
+    """Clone messages before vision cleanup so checkpoints/history are not mutated."""
+    if hasattr(msg, "model_copy"):
+        return msg.model_copy(deep=True)
+    if hasattr(msg, "copy"):
+        return msg.copy(deep=True)
+    return copy.deepcopy(msg)
 
 def _get_llm(model_id: str, region: str) -> ChatBedrockConverse:
     """Returns a cached LLM instance, creating one if needed."""
@@ -145,7 +154,8 @@ def build_master_graph():
         )
         region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
         
-        messages = list(state['messages'])
+        messages = [_clone_message(m) for m in state['messages']]
+        updated_messages_for_state = []
         
         # 2. Vision Check: If history has images, we MUST use a vision-capable model
         vision_model_id = os.getenv("CLAUDE_MODEL_ID", "us.meta.llama4-maverick-17b-instruct-v1:0")
@@ -197,6 +207,10 @@ def build_master_graph():
                         }
                     ]
                     print(f"[Vision] Injected screenshot into ToolMessage -> using {model_id}")
+                    # CRITICAL: We must return the stripped ToolMessage to the state
+                    # so LangGraph's add_messages can update the original message in history
+                    # and prevent base64 bloat in future turns.
+                    updated_messages_for_state.append(msg)
                     break
         
         response = await bound_llm.ainvoke(messages)
@@ -254,7 +268,7 @@ def build_master_graph():
                 # Bedrock Converse API forbids text + tool_calls in the same message
                 response.content = ""
                     
-        return {"messages": [response], "iteration": iteration}
+        return {"messages": updated_messages_for_state + [response], "iteration": iteration}
         
     # Build Graph
     workflow = StateGraph(AgentState)

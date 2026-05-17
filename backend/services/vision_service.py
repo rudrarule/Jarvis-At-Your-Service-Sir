@@ -5,13 +5,28 @@ Handles screen capture, window title PII checks, and image formatting for Bedroc
 import io
 import base64
 import time
+import asyncio
 import pyautogui
 from PIL import Image
+
+from services.dashboard_event_service import emit_dashboard_event
 
 try:
     import pygetwindow as gw
 except ImportError:
     gw = None
+
+
+def _emit_vision_event(event_type: str, payload: dict, level: str = "info") -> None:
+    """Emit dashboard telemetry from this synchronous capture module."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(emit_dashboard_event(event_type, payload, source="vision", level=level))
+    except RuntimeError:
+        try:
+            asyncio.run(emit_dashboard_event(event_type, payload, source="vision", level=level))
+        except Exception:
+            pass
 
 
 # ── PII Safety Gate ────────────────────────────────────────
@@ -48,8 +63,12 @@ def _capture_retina_view() -> tuple[str | None, str | None]:
         (base64_string, error_message)
     """
     try:
+        started = time.perf_counter()
+        _emit_vision_event("vision.capture_started", {"mode": "active_window"})
         img = None
         active_title = ""
+        source = "fullscreen"
+        capture_region = None
         
         # Try active window capture first
         if gw is not None:
@@ -59,14 +78,26 @@ def _capture_retina_view() -> tuple[str | None, str | None]:
                 
                 # Check PII Gate before doing the heavy capture
                 if not is_safe_to_capture(active_title):
+                    _emit_vision_event(
+                        "vision.capture_blocked",
+                        {"reason": "sensitive_window_title", "window_title": active_title},
+                        level="warning",
+                    )
                     return None, "Sir, I've detected what appears to be sensitive credentials on screen. I'd rather not see that. Please switch windows."
                 
                 # Bounding box: left, top, width, height
                 region = (active_window.left, active_window.top, active_window.width, active_window.height)
+                capture_region = {
+                    "left": active_window.left,
+                    "top": active_window.top,
+                    "width": active_window.width,
+                    "height": active_window.height,
+                }
                 # Ensure valid dimensions
                 if region[2] > 0 and region[3] > 0:
                     try:
                         img = pyautogui.screenshot(region=region)
+                        source = "active_window"
                     except Exception as e:
                         print(f"[VISION] Active window capture failed: {e}. Falling back to full screen.")
         
@@ -101,14 +132,32 @@ def _capture_retina_view() -> tuple[str | None, str | None]:
         
         size_kb = len(img_bytes) / 1024
         print(f"[VISION] Capture successful. {original_width}x{original_height}px -> {new_width}x{new_height}px -> JPEG {size_kb:.1f}KB -> Bedrock.")
-        
+        _emit_vision_event(
+            "vision.frame",
+            {
+                "source": source,
+                "window_title": active_title,
+                "region": capture_region,
+                "original_width": original_width,
+                "original_height": original_height,
+                "width": new_width,
+                "height": new_height,
+                "size_kb": round(size_kb, 1),
+                "duration_ms": round((time.perf_counter() - started) * 1000),
+                "mime_type": "image/jpeg",
+                "image_base64": img_b64,
+            },
+        )
+
         return img_b64, None
 
     except pyautogui.FailSafeException:
         print("[VISION] Error: FailSafeException — mouse in corner, capture aborted.")
+        _emit_vision_event("vision.capture_failed", {"error": "pyautogui.FailSafeException"}, level="error")
         return None, "Sir, my visual cortex appears to be offline. I can still assist you in the traditional, text-based, decidedly less impressive fashion."
     except Exception as e:
         import traceback
         print(f"[VISION] Error during capture: {e}")
         print(traceback.format_exc())
+        _emit_vision_event("vision.capture_failed", {"error": f"{type(e).__name__}: {e}"}, level="error")
         return None, "Sir, my visual cortex appears to be offline. I can still assist you in the traditional, text-based, decidedly less impressive fashion."
