@@ -31,6 +31,19 @@ _IMPORTANT_PATTERNS = [
 
 MAX_MEMORIES = 500
 DUPLICATE_THRESHOLD = 0.92  # cosine similarity above this = duplicate
+MIN_RETRIEVAL_SIMILARITY = 0.62
+MAX_MEMORY_CONTEXT_CHARS = 900
+
+
+def _memory_category(text: str) -> str:
+    lowered = text.lower()
+    if any(marker in lowered for marker in ("my name is", "call me", "i am ", "i'm ")):
+        return "profile"
+    if any(marker in lowered for marker in ("i prefer", "i like", "i love", "i hate", "favorite")):
+        return "preference"
+    if any(marker in lowered for marker in ("i work", "my goal", "project", "workspace")):
+        return "work"
+    return "fact"
 
 
 def is_important_message(message: str) -> bool:
@@ -79,6 +92,7 @@ async def store_memory(text: str) -> bool:
             metadatas=[{
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "source": "chat",
+                "category": _memory_category(text),
             }],
         )
         print(f"[MEM] Memory stored: {text[:60]}...")
@@ -88,7 +102,7 @@ async def store_memory(text: str) -> bool:
         return False
 
 
-async def retrieve_memory(query: str, n_results: int = 3) -> str:
+async def retrieve_memory(query: str, n_results: int = 5) -> str:
     """
     Retrieve the most relevant memories for a given query.
     Returns a formatted string of relevant memories, or empty string.
@@ -107,9 +121,37 @@ async def retrieve_memory(query: str, n_results: int = 3) -> str:
         if not results["documents"] or not results["documents"][0]:
             return ""
 
-        # Build context string from retrieved memories
-        memories = results["documents"][0]
-        return "\n".join(f"- {mem}" for mem in memories)
+        memories = []
+        documents = results["documents"][0]
+        distances = (results.get("distances") or [[]])[0]
+        metadatas = (results.get("metadatas") or [[]])[0]
+
+        for idx, memory in enumerate(documents):
+            distance = distances[idx] if idx < len(distances) else 2.0
+            similarity = 1 - (distance / 2)
+            if similarity < MIN_RETRIEVAL_SIMILARITY:
+                continue
+            metadata = metadatas[idx] if idx < len(metadatas) and isinstance(metadatas[idx], dict) else {}
+            memories.append({
+                "text": memory,
+                "similarity": similarity,
+                "category": metadata.get("category", "fact"),
+                "timestamp": metadata.get("timestamp", ""),
+            })
+
+        if not memories:
+            return ""
+
+        memories.sort(key=lambda item: (item["similarity"], item["timestamp"]), reverse=True)
+        lines = []
+        char_count = 0
+        for item in memories[:3]:
+            line = f"- ({item['category']}) {item['text']}"
+            if char_count + len(line) > MAX_MEMORY_CONTEXT_CHARS:
+                break
+            lines.append(line)
+            char_count += len(line)
+        return "\n".join(lines)
     except Exception as e:
         print(f"[MEM WARNING] Failed to retrieve memories: {e}")
         return ""

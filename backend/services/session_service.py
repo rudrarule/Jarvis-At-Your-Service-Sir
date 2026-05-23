@@ -25,3 +25,8 @@ def get_session_history(session_id: str, limit: int = 10) -> List[Dict[str, str]
     """Get the most recent history for a session."""
     session = get_session(session_id)
     return session[-limit:] if limit else session
+
+def clear_session(session_id: str):
+    """Clear session messages."""
+    if session_id in chat_sessions:
+        chat_sessions[session_id] = []

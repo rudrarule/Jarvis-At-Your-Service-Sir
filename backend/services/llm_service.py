@@ -13,6 +13,7 @@ import httpx
 import re
 import os
 import time
+import uuid
 
 try:
     import boto3
@@ -110,7 +111,22 @@ ANTI-HALLUCINATION RULES:
 - NEVER call multiple tools in the same turn if they depend on each other. For example, you MUST wait for the result of browser_observe before you can call browser_interact. Do NOT chain them in a single response.
 - NEVER skip the observe step. If you are unsure what is on the page, observe first.
 - If a tool call fails, observe the page state before retrying.
-- You can chain multiple independent tools together. For example: check weather, then text someone about it, then save a note to a file."""
+- You can chain multiple independent tools together. For example: check weather, then text someone about it, then save a note to a file.
+
+SCROLL-ON-MISS RULE (CRITICAL):
+- After searching on any e-commerce site (Amazon, Flipkart, BigBasket, etc.), the search results are almost always BELOW the search bar area. You MUST call browser_scroll('down') at least once after typing a search query to reveal the product listings.
+- If you searched for something and browser_observe shows no matching products, ALWAYS scroll down 1-3 times before concluding the product isn't available. Most pages show results below the fold.
+- NEVER skip to a different site or give up on a search without scrolling at least twice.
+
+DATA EXTRACTION RULES:
+- When comparing prices across sites, note down each price explicitly in your reasoning before moving to the next site.
+- After collecting all prices, use file_write to save the comparison report BEFORE responding to the user.
+- Always include the exact prices, product names, and which site is cheaper in your file output.
+
+TASK COMPLETION RULE (CRITICAL):
+- Once you have written the output file (file_write), your task is DONE. Immediately deliver your final spoken summary to the user. Do NOT continue browsing, searching, or opening more pages after writing the file.
+- If the user asked you to research, compare, or gather information, you should: (1) visit the required sites, (2) extract the data, (3) write the file, (4) STOP and report your findings.
+- NEVER rewrite the same file multiple times. Write it ONCE with all your collected data, then respond."""
 
 # ── Tier 1: Regex Fast-Path (0ms) ─────────────────────────
 
@@ -222,6 +238,15 @@ async def _tier1_regex_single(msg_clean: str, session_id: str = "default") -> st
     if msg_clean in ["what apps are running", "list running apps", "what's open", "whats open", "list apps"]:
         print("[TIER 1] Regex -> list_running_apps")
         return await execute_tool("list_running_apps", {})
+
+    # 6b. Clear / Reset Conversation
+    if msg_clean in ["clear", "reset", "clear chat", "reset conversation", "clear history", "reset history", "clear conversation", "restart conversation"]:
+        print(f"[TIER 1] Regex -> clear conversation for session: {session_id}")
+        from services.session_service import clear_session
+        clear_session(session_id)
+        from workflows.wa_send_workflow import clear_workflow
+        clear_workflow(session_id)
+        return "Conversation history and workflows have been successfully reset, sir."
     
     # 7. WhatsApp Briefing
     if any(x in msg_clean for x in ["who messaged me", "any new messages", "check whatsapp", "who called me", "any missed calls", "whatsapp briefing"]):
@@ -298,6 +323,34 @@ def _get_suggested_intents(msg: str) -> list[str]:
     if "whatsapp" in msg_lower or "message" in msg_lower or "text" in msg_lower: intents.append("WHATSAPP")
     
     return intents if intents else ["ALL"]
+
+
+def _looks_like_mission_goal(goal: str) -> bool:
+    """Detect multi-step goals that need deterministic Mission Mode instead of open-ended ReAct."""
+    text = goal.lower()
+    
+    # Goals targeting specific sites need full Tier 3 browser control, not mission graph
+    tier3_site_keywords = [
+        "amazon", "flipkart", "bigbasket", "blinkit", "zepto", "swiggy", "zomato",
+        "myntra", "meesho", ".com", ".in", "checkout", "add to basket", "add to cart",
+        "proceed to payment",
+    ]
+    if any(kw in text for kw in tier3_site_keywords):
+        return False
+    
+    mission_phrases = [
+        "research",
+        "find and compare",
+        "search and save",
+        "search and message",
+        "analyze and save",
+        "summarize and save",
+        "do this for me",
+    ]
+    compound_goal = any(word in text for word in ("search", "find", "open", "check", "research")) and any(
+        word in text for word in ("save", "message", "compare", "summarize", "send", "text")
+    )
+    return any(phrase in text for phrase in mission_phrases) or compound_goal
 
 
 def is_complex_query(msg: str) -> bool:
@@ -806,6 +859,23 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
         return reply
 
     # ── Tier 1: Regex Fast-Path (0ms) ──
+    try:
+        import importlib
+
+        mission_module = importlib.import_module("workflows.mission_graph")
+
+        active_mission = mission_module.get_active_mission(session_id)
+        if active_mission:
+            if datetime.now() - active_mission.get("created_at", datetime.now()) > timedelta(minutes=15):
+                mission_module.clear_mission(session_id)
+            elif active_mission.get("pending_confirmation"):
+                append_message(session_id, "user", user_message)
+                reply = await mission_module.handle_mission_confirmation(session_id, user_message)
+                append_message(session_id, "assistant", reply)
+                return reply
+    except Exception as exc:
+        print(f"[Mission] Confirmation route unavailable: {exc}")
+
     fast_result = await _tier1_regex(user_message, session_id)
     if fast_result:
         append_message(session_id, "assistant", fast_result)
@@ -865,6 +935,28 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
             memory_context = memories
 
     # ── Response Caching (skip tool-action responses to prevent poisoning) ──
+    if _looks_like_mission_goal(user_message):
+        try:
+            import importlib
+
+            mission_module = importlib.import_module("workflows.mission_graph")
+
+            mission_state = await mission_module.mission_graph_app.ainvoke(
+                {"user_goal": user_message, "session_id": session_id},
+                {"configurable": {"thread_id": f"{session_id}:mission:{uuid.uuid4().hex[:8]}"}},
+            )
+            if mission_state.get("pending_confirmation"):
+                mission_module.store_active_mission(session_id, mission_state)
+
+            reply = mission_state.get("final_answer", "Mission completed, sir.")
+            append_message(session_id, "assistant", reply)
+            return reply
+        except Exception as exc:
+            import traceback
+
+            print(f"[Mission] Mission graph failed, falling back to Tier3: {exc}")
+            traceback.print_exc()
+
     if user_message in CACHE:
         reply = CACHE[user_message]
         # Don't serve cached tool-action responses (browser, file, etc.)
@@ -891,6 +983,9 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
     ]
     is_langgraph_task = any(b in msg_lower for b in langgraph_intents)
     
+    chat_history = get_session_history(session_id, limit=6)
+    complex_query = is_complex_query(user_message)
+    
     if is_langgraph_task or complex_query:
         # Use Llama 3.3 70B for all Tier 3 tasks — best tool-calling accuracy
         selected_model = "us.meta.llama3-3-70b-instruct-v1:0"
@@ -914,17 +1009,16 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
             lc_messages.append(HumanMessage(content=user_message))
             
         try:
-            import time
             graph_start = time.time()
             
-            # Max 25 iterations — LangGraph counts agent+tool as 2 steps each
+            # Max 150 steps — LangGraph counts each node transition as 1 step (each loop takes ~4 steps)
             final_state = await master_graph_app.ainvoke(
                 {"messages": lc_messages, "iteration": 0}, 
                 {
-                    "recursion_limit": 25,
+                    "recursion_limit": 150,
                     "configurable": {
                         "model_id": selected_model,
-                        "thread_id": session_id  # MemorySaver persistence key
+                        "thread_id": f"{session_id}:{uuid.uuid4().hex}"  # Fresh scratchpad with session traceability
                     }
                 }
             )
@@ -938,6 +1032,8 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
                 final_message = " ".join(b.get("text", "") for b in final_message if isinstance(b, dict) and "text" in b)
             
             print(f"[Tier3] LangGraph completed successfully.")
+            if text_fallback_prefix:
+                final_message = text_fallback_prefix + final_message
             append_message(session_id, "assistant", final_message)
             return final_message
             
@@ -1065,11 +1161,13 @@ async def _handle_wa_continuation(wf, user_message: str) -> str:
             return "Understood, sir. Message cancelled."
 
         if wf.status == "error":
+            clear_workflow(wf.session_id)
             return node_handle_failure(wf)
 
         # Contact resolved — continue workflow: draft -> confirm
         wf = await node_draft_message(wf)
         if wf.status == "error":
+            clear_workflow(wf.session_id)
             return node_handle_failure(wf)
 
         return node_confirm_send(wf)

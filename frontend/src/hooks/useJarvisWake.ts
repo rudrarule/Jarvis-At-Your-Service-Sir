@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useWakeWord } from "./useWakeWord";
 
-const BACKEND_URL = "http://localhost:8082";
+const BACKEND_URL = window.location.origin;
 
 /**
  * Play a cinematic startup chime using the Web Audio API.

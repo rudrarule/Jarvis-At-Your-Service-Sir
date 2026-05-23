@@ -18,6 +18,10 @@ async def mock_route_hybrid_llm(*args, **kwargs):
 async def mock_call_maverick_vision(image_b64, user_message):
     return "I can see your screen, sir. It appears you have VS Code open."
 
+async def mock_master_graph_ainvoke(*args, **kwargs):
+    from langchain_core.messages import AIMessage
+    return {"messages": [AIMessage(content="This is the standard text response.")]}
+
 async def run_qa_tests():
     print("==================================================")
     print("  J.A.R.V.I.S. Retina Module - QA Testing Suite  ")
@@ -26,7 +30,8 @@ async def run_qa_tests():
     session_id = "qa_test_session"
     
     # Patch the text router to avoid hitting Ollama/Bedrock for the text fallback
-    with patch("backend.services.llm_service._route_hybrid_llm", new=mock_route_hybrid_llm):
+    with patch("backend.services.llm_service._route_hybrid_llm", new=mock_route_hybrid_llm), \
+         patch("workflows.master_graph.master_graph_app.ainvoke", new=mock_master_graph_ainvoke):
         
         # Patch the vision model to avoid AWS calls
         with patch("backend.services.llm_service._call_maverick_vision", new=mock_call_maverick_vision):

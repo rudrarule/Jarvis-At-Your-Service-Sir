@@ -9,6 +9,7 @@ import inspect
 import json
 import os
 import re
+import time
 import urllib.parse
 from datetime import datetime
 from typing import Any, TypedDict
@@ -16,6 +17,8 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from workflows.tool_wrapper import ALL_TOOLS
+
+MAX_STEP_RETRIES = int(os.getenv("MISSION_MAX_STEP_RETRIES", "2"))
 
 
 class MissionState(TypedDict, total=False):
@@ -28,6 +31,9 @@ class MissionState(TypedDict, total=False):
     errors: list[str]
     pending_confirmation: list[dict[str, Any]]
     final_answer: str
+    retry_counts: dict[str, int]
+    step_verifications: list[dict[str, Any]]
+    events: list[dict[str, Any]]
 
 
 RISKY_TOOLS = {"whatsapp_send_message"}
@@ -95,6 +101,96 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _emit_mission_event(event_type: str, payload: dict[str, Any], level: str = "info") -> None:
+    try:
+        from services.dashboard_event_service import emit_dashboard_event
+
+        await emit_dashboard_event(event_type, payload, source="mission", level=level)
+    except Exception as exc:
+        print(f"[Mission Telemetry] Failed to emit {event_type}: {exc}")
+
+
+def _tool_result_success(output: Any) -> bool:
+    if isinstance(output, dict):
+        if output.get("success") is False:
+            return False
+        if output.get("error"):
+            return False
+        return True
+
+    text = str(output).lower()
+    failure_markers = [
+        "failed",
+        "couldn't",
+        "could not",
+        "error:",
+        "encountered an error",
+        "timeout",
+        "not available",
+    ]
+    return not any(marker in text for marker in failure_markers)
+
+
+def _verify_step_output(step: dict[str, Any], args: dict[str, Any], output: Any) -> dict[str, Any]:
+    tool_name = step.get("tool")
+    base_passed = _tool_result_success(output)
+    confidence = 0.82 if base_passed else 0.25
+    reason = "tool_reported_success" if base_passed else "tool_reported_failure"
+
+    if tool_name == "browser_open_url" and isinstance(output, dict):
+        data = output.get("data") or {}
+        passed = base_passed and (bool(data.get("url")) or output.get("success") is True)
+        return {
+            "passed": passed,
+            "confidence": 0.9 if data.get("url") else (0.72 if passed else 0.35),
+            "reason": "url_loaded" if data.get("url") else ("tool_success_without_url_delta" if passed else "browser_url_missing_after_open"),
+        }
+
+    if tool_name == "browser_observe" and isinstance(output, dict):
+        data = output.get("data") or {}
+        passed = base_passed and (
+            bool(data.get("url") or data.get("summary") or data.get("interactive_elements"))
+            or output.get("success") is True
+        )
+        return {
+            "passed": passed,
+            "confidence": 0.9 if data else (0.72 if passed else 0.35),
+            "reason": "page_observation_available" if data else ("tool_success_without_observation_payload" if passed else "empty_browser_observation"),
+        }
+
+    if tool_name == "file_write":
+        text = str(output).lower()
+        passed = base_passed and ("written" in text or "success" in text or isinstance(output, dict))
+        return {
+            "passed": passed,
+            "confidence": 0.88 if passed else 0.30,
+            "reason": "file_write_acknowledged" if passed else "file_write_not_confirmed",
+        }
+
+    if tool_name == "whatsapp_send_message":
+        text = str(output).lower()
+        passed = base_passed and any(marker in text for marker in ("sent", "success", "done"))
+        return {
+            "passed": passed,
+            "confidence": 0.86 if passed else 0.35,
+            "reason": "message_send_acknowledged" if passed else "message_send_not_confirmed",
+        }
+
+    return {"passed": base_passed, "confidence": confidence, "reason": reason}
+
+
+def _is_retryable_step(step: dict[str, Any], verification: dict[str, Any]) -> bool:
+    if verification.get("passed"):
+        return False
+    return step.get("tool") in {
+        "browser_open_url",
+        "browser_observe",
+        "browser_scroll",
+        "browser_get_status",
+        "weather_check",
+    }
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -323,7 +419,19 @@ async def plan_mission(state: MissionState) -> MissionState:
     plan = _validate_raw_steps(await llm_plan_mission(goal))
     if not plan:
         plan = _heuristic_plan(goal)
-    return {**state, "plan": plan, "current_step": 0, "step_results": [], "errors": []}
+    await _emit_mission_event(
+        "plan.created",
+        {"session_id": state.get("session_id"), "steps": plan, "step_count": len(plan)},
+    )
+    return {
+        **state,
+        "plan": plan,
+        "current_step": 0,
+        "step_results": [],
+        "errors": [],
+        "retry_counts": {},
+        "step_verifications": [],
+    }
 
 
 def safety_gate(state: MissionState) -> MissionState:
@@ -391,6 +499,8 @@ async def execute_plan(state: MissionState) -> MissionState:
     tools = _tool_map()
     results = list(state.get("step_results", []))
     errors = list(state.get("errors", []))
+    retry_counts = dict(state.get("retry_counts") or {})
+    verifications = list(state.get("step_verifications", []))
 
     for step in state.get("plan", []):
         if step.get("status") == "done":
@@ -414,18 +524,128 @@ async def execute_plan(state: MissionState) -> MissionState:
             continue
 
         args = _prepare_confirmed_args(tool_name, step.get("args") or {}, state, results)
+        step_key = str(step.get("id") or tool_name)
+        max_attempts = 1 + MAX_STEP_RETRIES
+        output = None
+        verification: dict[str, Any] = {"passed": False, "confidence": 0.0, "reason": "not_executed"}
 
-        try:
-            output = await _invoke_tool(tool, args)
-            step["status"] = "done"
-            results.append({**step, "status": "done", "output": output})
-        except Exception as exc:
-            step["status"] = "failed"
-            error = f"{tool_name} failed: {exc}"
-            errors.append(error)
-            results.append({**step, "status": "failed", "output": error})
+        for attempt in range(1, max_attempts + 1):
+            started = time.perf_counter()
+            await _emit_mission_event(
+                "tool.started",
+                {
+                    "session_id": state.get("session_id"),
+                    "step_id": step.get("id"),
+                    "tool": tool_name,
+                    "attempt": attempt,
+                    "args": args,
+                },
+            )
+            try:
+                output = await _invoke_tool(tool, args)
+                verification = _verify_step_output(step, args, output)
+                verifications.append({
+                    "step_id": step.get("id"),
+                    "tool": tool_name,
+                    "attempt": attempt,
+                    **verification,
+                })
+                await _emit_mission_event(
+                    "verifier.result",
+                    {
+                        "session_id": state.get("session_id"),
+                        "step_id": step.get("id"),
+                        "tool": tool_name,
+                        "attempt": attempt,
+                        "duration_ms": round((time.perf_counter() - started) * 1000),
+                        **verification,
+                    },
+                    level="info" if verification.get("passed") else "warning",
+                )
 
-    return {**state, "step_results": results, "errors": errors}
+                if verification.get("passed"):
+                    step["status"] = "done"
+                    results.append({
+                        **step,
+                        "status": "done",
+                        "output": output,
+                        "verification": verification,
+                        "attempts": attempt,
+                    })
+                    break
+
+                retry_counts[step_key] = attempt
+                if attempt < max_attempts and _is_retryable_step(step, verification):
+                    await _emit_mission_event(
+                        "retry.scheduled",
+                        {
+                            "session_id": state.get("session_id"),
+                            "step_id": step.get("id"),
+                            "tool": tool_name,
+                            "attempt": attempt,
+                            "reason": verification.get("reason"),
+                        },
+                        level="warning",
+                    )
+                    continue
+
+                step["status"] = "failed"
+                error = f"{tool_name} verification failed: {verification.get('reason')}"
+                errors.append(error)
+                results.append({
+                    **step,
+                    "status": "failed",
+                    "output": output,
+                    "verification": verification,
+                    "attempts": attempt,
+                })
+                break
+            except Exception as exc:
+                retry_counts[step_key] = attempt
+                verification = {
+                    "passed": False,
+                    "confidence": 0.0,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                }
+                verifications.append({
+                    "step_id": step.get("id"),
+                    "tool": tool_name,
+                    "attempt": attempt,
+                    **verification,
+                })
+                if attempt < max_attempts and _is_retryable_step(step, verification):
+                    await _emit_mission_event(
+                        "retry.scheduled",
+                        {
+                            "session_id": state.get("session_id"),
+                            "step_id": step.get("id"),
+                            "tool": tool_name,
+                            "attempt": attempt,
+                            "reason": verification["reason"],
+                        },
+                        level="warning",
+                    )
+                    continue
+
+                step["status"] = "failed"
+                error = f"{tool_name} failed: {exc}"
+                errors.append(error)
+                results.append({
+                    **step,
+                    "status": "failed",
+                    "output": error,
+                    "verification": verification,
+                    "attempts": attempt,
+                })
+                break
+
+    return {
+        **state,
+        "step_results": results,
+        "errors": errors,
+        "retry_counts": retry_counts,
+        "step_verifications": verifications,
+    }
 
 
 def verify_mission(state: MissionState) -> MissionState:

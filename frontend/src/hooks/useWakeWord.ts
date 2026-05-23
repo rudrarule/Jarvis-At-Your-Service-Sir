@@ -577,7 +577,7 @@ registerProcessor('oww-processor', OWWProcessor);
           const formData = new FormData();
           formData.append("audio", new Blob([wavBuffer], { type: "audio/wav" }), "command.wav");
 
-          const res = await fetch("http://localhost:8082/stt", {
+          const res = await fetch(`${window.location.origin}/stt`, {
             method: "POST",
             body: formData,
           });

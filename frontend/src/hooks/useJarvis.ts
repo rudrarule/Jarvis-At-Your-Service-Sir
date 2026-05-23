@@ -6,7 +6,7 @@ export interface Message {
   sender: "user" | "jarvis";
 }
 
-const BACKEND_URL = "http://localhost:8082";
+const BACKEND_URL = window.location.origin;
 
 /**
  * useJarvis — manages the full AI pipeline:

@@ -8,7 +8,7 @@ interface ConnectionStatusProps {
 }
 
 export default function ConnectionStatus({
-  backendUrl = "http://localhost:8082",
+  backendUrl = window.location.origin,
   checkInterval = 5000,
 }: ConnectionStatusProps) {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);

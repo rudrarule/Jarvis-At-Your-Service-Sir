@@ -45,8 +45,8 @@ export interface DashboardMission {
   error?: string | null;
 }
 
-const HTTP_URL = "http://localhost:8082";
-const WS_URL = "ws://localhost:8082/dashboard/ws";
+const HTTP_URL = window.location.origin;
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/dashboard/ws`;
 
 export function useDashboardEvents() {
   const [events, setEvents] = useState<DashboardEvent[]>([]);

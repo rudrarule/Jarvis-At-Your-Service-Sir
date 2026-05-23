@@ -3,6 +3,10 @@ tool_wrapper.py — LangChain tool wrappers for J.A.R.V.I.S. LangGraph Agent
 Wraps browser, whatsapp, file system, and weather tools into LangChain @tool decorators.
 """
 
+import hashlib
+import json
+import time
+
 from langchain_core.tools import tool
 from tools.browser_tool import (
     open_url, get_current_url, get_page_title, 
@@ -39,14 +43,16 @@ async def browser_open_url(url: str) -> dict:
     return await open_url(url)
 
 @tool
-async def browser_interact(element_id: int, action: str, text: str = "") -> dict:
+async def browser_interact(element_id: int, action: str, text: str = "", press_enter: bool = True) -> dict:
     """
     Interact with a specific UI element using its numerical ID from browser_observe.
     Actions: 'click', 'type'.
     If action is 'type', provide the 'text' argument.
+    Set press_enter=False to prevent pressing Enter after typing (useful for login forms, address fields).
+    By default, press_enter=True which submits search queries automatically.
     Use this to click buttons, follow links, or fill forms flawlessly.
     """
-    return await interact_by_id(element_id, action, text)
+    return await interact_by_id(element_id, action, text, press_enter)
 
 @tool
 async def browser_scroll(direction: str = "down") -> dict:
@@ -70,8 +76,8 @@ async def browser_observe() -> dict:
     markers_res = await inject_element_markers()
     screenshot_res = await take_screenshot()
     
-    visible_text = text_res.get("data", {}).get("text", "")
-    compressed_text = visible_text[:1000] + ("..." if len(visible_text) > 1000 else "")
+    visible_text = (text_res.get("data") or {}).get("text", "") if text_res else ""
+    compressed_text = visible_text[:500] + ("..." if len(visible_text) > 500 else "")
     
     elements_list = (markers_res.get("data") or {}).get("elements", [])
     inputs = [e for e in elements_list if e.get("tag") == "input"]
@@ -79,20 +85,70 @@ async def browser_observe() -> dict:
     links = [e for e in elements_list if e.get("tag") == "a"]
     print(f"[Observation] {len(elements_list)} elements: {len(inputs)} inputs, {len(buttons)} buttons, {len(links)} links")
     
+    # ── Observation Payload Optimization ──
+    # Prioritize actionable elements, cap low-value links
+    optimized_elements = []
+    link_count = 0
+    for el in elements_list:
+        tag = el.get("tag", "")
+        if tag == "a":
+            # Keep links with product context (they're relevant) but cap bare nav links
+            if el.get("context") or link_count < 15:
+                link_count += 1
+            else:
+                continue  # Skip excess bare navigation links
+        # Strip bbox to save ~30 chars per element
+        el.pop("bbox", None)
+        optimized_elements.append(el)
+    
+    if len(optimized_elements) < len(elements_list):
+        print(f"[Observation] Optimized: {len(elements_list)} -> {len(optimized_elements)} elements (stripped bbox, capped links)")
+
     # Include screenshot if captured successfully
     screenshot_b64 = None
     if screenshot_res.get("success") and isinstance(screenshot_res.get("data"), dict):
         screenshot_b64 = screenshot_res["data"].get("image_base64")
+
+    url = (url_res.get("data") or {}).get("url", "")
+    title = (title_res.get("data") or {}).get("title", "")
+    fingerprint_basis = {
+        "url": url,
+        "title": title,
+        "summary": compressed_text[:500],
+        "elements": [
+            {
+                "id": item.get("id"),
+                "tag": item.get("tag"),
+                "role": item.get("role"),
+                "text": item.get("text"),
+                "context": item.get("context"),
+            }
+            for item in optimized_elements[:80]
+            if isinstance(item, dict)
+        ],
+    }
+    page_fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_basis, sort_keys=True, ensure_ascii=True).encode("utf-8")
+    ).hexdigest()[:16]
+    observation_id = hashlib.sha256(f"{page_fingerprint}:{time.time()}".encode("utf-8")).hexdigest()[:12]
     
     return {
         "success": True,
         "action": "browser_observe",
         "observation": "Extracted structured page data, interactive element IDs, and viewport screenshot",
         "data": {
-            "url": (url_res.get("data") or {}).get("url", ""),
-            "title": (title_res.get("data") or {}).get("title", ""),
+            "observation_id": observation_id,
+            "page_fingerprint": page_fingerprint,
+            "url": url,
+            "title": title,
             "summary": compressed_text,
-            "interactive_elements": (markers_res.get("data") or {}).get("elements", []),
+            "element_counts": {
+                "total": len(optimized_elements),
+                "inputs": len(inputs),
+                "buttons": len(buttons),
+                "links": len(links),
+            },
+            "interactive_elements": optimized_elements,
             "screenshot_base64": screenshot_b64
         }
     }
@@ -121,6 +177,16 @@ async def browser_go_back() -> dict:
     Use this if you clicked the wrong link, encountered an error, or need to return to search results.
     """
     return await go_back()
+
+@tool
+async def browser_search(query: str) -> str:
+    """
+    Search the internet for any topic, query, or product information.
+    Returns the search results as a formatted text summary.
+    This does NOT open a browser window and is extremely fast and reliable.
+    """
+    from tools.browser_tool import browser_search as _search
+    return await _search(query, open_visible=False)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -216,7 +282,8 @@ BROWSER_TOOLS = [
     browser_scroll,
     browser_observe,
     browser_get_status,
-    browser_go_back
+    browser_go_back,
+    browser_search
 ]
 
 WHATSAPP_TOOLS = [

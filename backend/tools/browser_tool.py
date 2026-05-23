@@ -6,6 +6,7 @@ to support LangGraph ReAct agent loops and multi-step workflows.
 import asyncio
 import base64
 import os
+import re
 import urllib.parse
 from typing import Any, Dict, List, Optional
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout, Page, Browser, BrowserContext
@@ -33,30 +34,62 @@ class BrowserStateManager:
                 return cls._page
             
             if not cls._playwright:
+                import sys
+                if sys.platform == 'win32':
+                    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
                 cls._playwright = await async_playwright().start()
             
             from dotenv import load_dotenv
             env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
             load_dotenv(env_path, override=True)
             
-            headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
+            # Force foreground browser mode regardless of terminal state
+            headless = os.getenv("BROWSER_HEADLESS", "false").lower() == "true"
             user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "browser_user_data"))
             
             if not cls._context:
-                cls._context = await cls._playwright.chromium.launch_persistent_context(
-                    user_data_dir=user_data_dir,
-                    headless=headless,
-                    viewport={'width': 1280, 'height': 800},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox", "--disable-blink-features=AutomationControlled"]
-                )
+                launch_args = {
+                    "headless": headless,
+                    "viewport": {'width': 1280, 'height': 800},
+                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "args": ["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox", "--disable-blink-features=AutomationControlled"],
+                }
+                try:
+                    cls._context = await cls._playwright.chromium.launch_persistent_context(
+                        user_data_dir=user_data_dir,
+                        **launch_args,
+                    )
+                except Exception as e:
+                    if "profile is already in use" not in str(e).lower() and "existing browser session" not in str(e).lower():
+                        raise
+                    fallback_dir = os.path.abspath(os.path.join(
+                        os.path.dirname(__file__),
+                        "..",
+                        f"browser_user_data_{os.getpid()}_{int(asyncio.get_running_loop().time() * 1000)}",
+                    ))
+                    print(f"[BrowserStateManager] Browser profile locked, using temporary profile: {fallback_dir}")
+                    cls._context = await cls._playwright.chromium.launch_persistent_context(
+                        user_data_dir=fallback_dir,
+                        **launch_args,
+                    )
             
-            cls._page = cls._context.pages[0] if cls._context.pages else await cls._context.new_page()
-            
-            # Anti-detection stealth scripts
-            await cls._page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            
-            return cls._page
+            try:
+                cls._page = cls._context.pages[0] if cls._context.pages else await cls._context.new_page()
+                
+                # Anti-detection stealth scripts
+                await cls._page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
+                return cls._page
+            except Exception as e:
+                # If the context crashed (TargetClosedError), wipe it and recursively rebuild
+                print(f"[BrowserStateManager] Context dead, rebuilding: {e}")
+                cls._context = None
+                cls._page = None
+                # Release the lock briefly to avoid deadlocks on recursive call
+                pass
+        
+        # Call outside the lock if we had an exception
+        return await cls.get_page()
 
     @classmethod
     async def close_all(cls):
@@ -83,11 +116,31 @@ class BrowserStateManager:
 
 # --- Screenshot for Vision ---
 
+def _compress_screenshot(screenshot_bytes: bytes, target_width: int = 640, target_height: int = 400) -> bytes:
+    """Resize screenshot to reduce base64 payload size for vision models."""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(screenshot_bytes))
+        img = img.resize((target_width, target_height), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        compressed = buf.getvalue()
+        print(f"[Screenshot] Compressed {len(screenshot_bytes)} -> {len(compressed)} bytes ({target_width}x{target_height})")
+        return compressed
+    except ImportError:
+        print("[Screenshot] Pillow not available, skipping compression")
+        return screenshot_bytes
+    except Exception as e:
+        print(f"[Screenshot] Compression failed ({e}), using original")
+        return screenshot_bytes
+
 async def take_screenshot() -> dict:
     """Takes a screenshot of the current browser viewport and returns it as base64 PNG."""
     try:
         page = await BrowserStateManager.get_page()
         screenshot_bytes = await page.screenshot(type="png")
+        screenshot_bytes = _compress_screenshot(screenshot_bytes)
         b64_image = base64.b64encode(screenshot_bytes).decode("utf-8")
         print(f"[Screenshot] Captured viewport ({len(screenshot_bytes)} bytes)")
         return _format_response(True, "take_screenshot", "Screenshot captured", {"image_base64": b64_image})
@@ -104,7 +157,12 @@ async def open_url(url: str) -> dict:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         return _format_response(True, "open_url", f"Navigated to {url}", {"url": page.url})
     except Exception as e:
-        return _format_response(False, "open_url", f"Failed to navigate to {url}", error=str(e))
+        import traceback
+        trace = traceback.format_exc()
+        with open(r"c:\Users\Rudra\holo-core-nexus\backend\data\graph_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"[Browser Error] {trace}\n")
+        err_msg = str(e) if str(e) else type(e).__name__
+        return _format_response(False, "open_url", f"Failed to navigate to {url}", error=err_msg)
 
 async def get_current_url() -> dict:
     try:
@@ -129,15 +187,7 @@ async def refresh_page() -> dict:
     except Exception as e:
         return _format_response(False, "refresh_page", "Failed to refresh", error=str(e))
 
-async def scroll_page(direction: str = "down") -> dict:
-    try:
-        page = await BrowserStateManager.get_page()
-        amount = 800 if direction == "down" else -800
-        await page.evaluate(f"window.scrollBy(0, {amount});")
-        await page.wait_for_timeout(1000)
-        return _format_response(True, "scroll_page", f"Scrolled {direction}")
-    except Exception as e:
-        return _format_response(False, "scroll_page", "Failed to scroll", error=str(e))
+
 
 async def close_browser() -> dict:
     try:
@@ -235,6 +285,34 @@ async def extract_visible_text() -> dict:
     except Exception as e:
         return _format_response(False, "extract_visible_text", "Failed to extract text", error=str(e))
 
+async def extract_links(limit: int = 50) -> dict:
+    try:
+        page = await BrowserStateManager.get_page()
+        links = await page.evaluate(
+            """(limit) => Array.from(document.querySelectorAll('a[href]')).slice(0, limit).map((a) => ({
+                text: (a.innerText || a.getAttribute('aria-label') || '').trim().slice(0, 120),
+                url: a.href
+            }))""",
+            limit,
+        )
+        return _format_response(True, "extract_links", f"Extracted {len(links)} links", {"links": links})
+    except Exception as e:
+        return _format_response(False, "extract_links", "Failed to extract links", error=str(e))
+
+async def extract_buttons(limit: int = 50) -> dict:
+    try:
+        page = await BrowserStateManager.get_page()
+        buttons = await page.evaluate(
+            """(limit) => Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]')).slice(0, limit).map((button) => ({
+                text: (button.innerText || button.value || button.getAttribute('aria-label') || '').trim().slice(0, 120),
+                disabled: Boolean(button.disabled || button.getAttribute('aria-disabled') === 'true')
+            }))""",
+            limit,
+        )
+        return _format_response(True, "extract_buttons", f"Extracted {len(buttons)} buttons", {"buttons": buttons})
+    except Exception as e:
+        return _format_response(False, "extract_buttons", "Failed to extract buttons", error=str(e))
+
 async def extract_element_text(selector: str) -> dict:
     try:
         page = await BrowserStateManager.get_page()
@@ -248,7 +326,7 @@ async def extract_element_text(selector: str) -> dict:
 async def inject_element_markers() -> dict:
     try:
         page = await BrowserStateManager.get_page()
-        script = """() => {
+        script = r"""() => {
             if (window.__jarvis_elements) {
                 document.querySelectorAll('.jarvis-marker').forEach(e => e.remove());
             }
@@ -256,7 +334,22 @@ async def inject_element_markers() -> dict:
             let counter = 1;
             const elements = [];
             
-            const interactables = document.querySelectorAll('a, button, input:not([type="hidden"]), select, textarea, [role="button"]');
+            function esc(value) {
+                return window.CSS && CSS.escape ? CSS.escape(value) : String(value).replace(/"/g, '\\"');
+            }
+
+            function stableSelector(el) {
+                if (el.id) return '#' + esc(el.id);
+                const jarvisId = el.getAttribute('data-jarvis-id');
+                if (jarvisId) return `[data-jarvis-id="${jarvisId}"]`;
+                const aria = el.getAttribute('aria-label');
+                if (aria) return `${el.tagName.toLowerCase()}[aria-label="${esc(aria)}"]`;
+                const name = el.getAttribute('name');
+                if (name) return `${el.tagName.toLowerCase()}[name="${esc(name)}"]`;
+                return el.tagName.toLowerCase();
+            }
+
+            const interactables = document.querySelectorAll('a, button, input:not([type="hidden"]), select, textarea, [role="button"], [role="link"], [contenteditable="true"]');
             
             interactables.forEach(el => {
                 const rect = el.getBoundingClientRect();
@@ -266,7 +359,10 @@ async def inject_element_markers() -> dict:
                 window.__jarvis_elements[id] = el;
                 el.setAttribute('data-jarvis-id', id);
                 
-                let text = el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '';
+                const ariaLabel = el.getAttribute('aria-label') || '';
+                const role = el.getAttribute('role') || '';
+                const placeholder = el.placeholder || '';
+                let text = el.innerText || el.value || placeholder || ariaLabel || el.getAttribute('title') || '';
                 text = text.trim().substring(0, 50); // limit length
                 
                 // Grab parent context for disambiguation (e.g., product name + price near an ADD button)
@@ -286,9 +382,20 @@ async def inject_element_markers() -> dict:
                     elements.push({
                         id: id,
                         tag: el.tagName.toLowerCase(),
+                        role: role,
                         type: el.type || '',
                         text: text,
+                        aria_label: ariaLabel,
+                        placeholder: placeholder,
                         context: context || '',
+                        selector: stableSelector(el),
+                        bbox: {
+                            x: Math.round(rect.left),
+                            y: Math.round(rect.top),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        },
+                        enabled: !(el.disabled || el.getAttribute('aria-disabled') === 'true'),
                         top: rect.top
                     });
                 }
@@ -316,6 +423,9 @@ async def inject_element_markers() -> dict:
             elements.forEach(e => {
                 delete e.top;
                 if (!e.context) delete e.context;
+                if (!e.role) delete e.role;
+                if (!e.aria_label) delete e.aria_label;
+                if (!e.placeholder) delete e.placeholder;
             });
             return elements;
         }"""
@@ -327,7 +437,7 @@ async def inject_element_markers() -> dict:
     except Exception as e:
         return _format_response(False, "inject_element_markers", "Failed to mark elements", error=str(e))
 
-async def interact_by_id(element_id: int, action: str, text: str = "") -> dict:
+async def interact_by_id(element_id: int, action: str, text: str = "", press_enter: bool = True) -> dict:
     try:
         page = await BrowserStateManager.get_page()
         
@@ -337,6 +447,14 @@ async def interact_by_id(element_id: int, action: str, text: str = "") -> dict:
         # Ensure element exists
         if await element.count() == 0:
             return _format_response(False, "interact_by_id", f"Element ID {element_id} not found on page.")
+
+        before_url = page.url
+        before_title = await page.title()
+        before_value = ""
+        try:
+            before_value = await element.input_value(timeout=1000)
+        except Exception:
+            before_value = ""
         
         # Scroll the element into view so the user can physically see what's happening
         await element.scroll_into_view_if_needed(timeout=5000)
@@ -361,13 +479,45 @@ async def interact_by_id(element_id: int, action: str, text: str = "") -> dict:
         elif action == "type":
             # Playwright fill perfectly triggers React state
             await element.fill(text, timeout=5000)
-            await element.press("Enter", timeout=5000)
+            if press_enter:
+                await element.press("Enter", timeout=5000)
+                # Auto-scroll down after search submission to reveal results below the fold
+                # On e-commerce sites (Amazon, Flipkart, BigBasket), results are always below the search bar
+                await page.wait_for_timeout(2000)  # Wait for search results to load
+                await page.mouse.wheel(0, 400)  # Scroll past the search bar area
+                await page.wait_for_timeout(500)
+                print(f"[Browser] Auto-scrolled down 400px after search submission")
         else:
             return _format_response(False, "interact_by_id", f"Unknown action '{action}'")
             
         # Give the page a moment to load
         await page.wait_for_timeout(3000)
-        return _format_response(True, "interact_by_id", f"Successfully executed '{action}' on element {element_id}")
+        after_url = page.url
+        after_title = await page.title()
+        after_value = ""
+        try:
+            refreshed = page.locator(selector).first
+            if await refreshed.count() > 0:
+                after_value = await refreshed.input_value(timeout=1000)
+        except Exception:
+            after_value = ""
+
+        return _format_response(
+            True,
+            "interact_by_id",
+            f"Successfully executed '{action}' on element {element_id}",
+            {
+                "element_id": element_id,
+                "action": action,
+                "before_url": before_url,
+                "after_url": after_url,
+                "before_title": before_title,
+                "after_title": after_title,
+                "url_changed": before_url != after_url,
+                "title_changed": before_title != after_title,
+                "value_changed": before_value != after_value,
+            },
+        )
             
     except Exception as e:
         return _format_response(False, "interact_by_id", f"Failed to execute '{action}' on element {element_id}", error=str(e))
@@ -454,45 +604,117 @@ async def wait_for_navigation(timeout: int = 15000) -> dict:
 
 # --- Backward Compatibility for current Registry ---
 
-async def browser_search(query: str, open_visible: bool = False) -> str:
-    """
-    Legacy wrapper for the current registry execution.
-    We maintain the old DuckDuckGo logic but route it through the new state manager
-    so it doesn't break existing LLM expectations before LangGraph is deployed.
-    """
+def _clean_html_text(value: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", value or "")
+    return re.sub(r"\s+", " ", urllib.parse.unquote(text)).strip()
+
+
+def _normalize_ddg_url(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urllib.parse.urlparse(url)
+    query = urllib.parse.parse_qs(parsed.query)
+    if "uddg" in query and query["uddg"]:
+        return query["uddg"][0]
+    return url
+
+
+def _extract_search_results_from_html(html: str, limit: int = 5) -> list[dict[str, str]]:
+    results = []
+    for href, label in re.findall(r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", html or "", flags=re.IGNORECASE | re.DOTALL):
+        url = _normalize_ddg_url(href)
+        if not url.startswith(("http://", "https://")):
+            continue
+        if "duckduckgo.com" in urllib.parse.urlparse(url).netloc.lower():
+            continue
+        title = _clean_html_text(label)
+        if not title:
+            continue
+        if any(existing["url"] == url for existing in results):
+            continue
+        results.append({"title": title[:160], "url": url, "snippet": ""})
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _format_search_results(query: str, results: list[dict[str, str]] | None) -> str:
+    if not results:
+        return f"I searched for '{query}', sir, but found no results."
+
+    lines = [f"Here are the search results for '{query}':"]
+    for idx, item in enumerate(results[:5], start=1):
+        snippet = str(item.get("snippet") or "").strip()
+        if len(snippet) > 220:
+            snippet = snippet[:217].rstrip() + "..."
+        lines.append(f"{idx}. {item.get('title', 'Untitled')}")
+        if snippet:
+            lines.append(f"   {snippet}")
+        lines.append(f"   Source: {item.get('url', '')}")
+    return "\n".join(lines)
+
+
+async def _ddg_api_search(query: str) -> list[dict[str, str]] | None:
+    """Fetch lightweight DuckDuckGo HTML results without requiring a browser."""
+    try:
+        async with __import__("httpx").AsyncClient(timeout=12.0) as client:
+            response = await client.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query},
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+        return _extract_search_results_from_html(response.text)
+    except Exception as exc:
+        print(f"[BrowserSearch] DDG lightweight search failed: {exc}")
+        return None
+
+
+async def _playwright_search(query: str) -> list[dict[str, str]] | None:
     try:
         encoded_query = urllib.parse.quote(query)
         url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
-        
-        # Override headless if open_visible is requested, though currently state manager initializes once.
         page = await BrowserStateManager.get_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        
-        try:
-            await page.wait_for_selector(".result", timeout=8000)
-            results = await page.evaluate("""
-                () => {
-                    const items = document.querySelectorAll('.result');
-                    let text = '';
-                    items.forEach((item, i) => {
-                        if (i >= 5) return;
-                        const link = item.querySelector('.result__a');
-                        const snippet = item.querySelector('.result__snippet');
-                        if (link) {
-                            text += `\\nResult ${i+1}: ${link.textContent.trim()}\\nURL: ${link.href}\\nSnippet: ${snippet ? snippet.textContent.trim() : ''}\\n`;
-                        }
-                    });
-                    return text;
-                }
-            """)
-            if results:
-                return f"Browser search completed. Found results:\\n{results}"
-            else:
-                return "Browser search completed but no results found on page."
-        except PlaywrightTimeout:
-            return "Timeout waiting for search results to load."
-    except Exception as e:
-        return f"Browser search failed: {e}"
+        await page.wait_for_selector(".result, a[href]", timeout=8000)
+        results = await page.evaluate(
+            """() => Array.from(document.querySelectorAll('.result')).slice(0, 5).map((item) => {
+                const link = item.querySelector('.result__a') || item.querySelector('a[href]');
+                const snippet = item.querySelector('.result__snippet');
+                return link ? {
+                    title: link.textContent.trim(),
+                    url: link.href,
+                    snippet: snippet ? snippet.textContent.trim() : ''
+                } : null;
+            }).filter(Boolean)"""
+        )
+        return results or []
+    except Exception as exc:
+        print(f"[BrowserSearch] Playwright search failed: {exc}")
+        return None
+
+
+async def _open_visible_browser(query: str) -> str:
+    encoded_query = urllib.parse.quote(query)
+    url = f"https://duckduckgo.com/?q={encoded_query}"
+    result = await open_url(url)
+    if result.get("success"):
+        return f"Opening browser for '{query}', sir. The tab will remain active."
+    return f"I couldn't open the browser search, sir: {result.get('error') or 'unknown error'}"
+
+
+async def browser_search(query: str, open_visible: bool = False) -> str:
+    """
+    Search the web using a lightweight DuckDuckGo request first, then Playwright
+    as a fallback. Visible mode opens the persistent browser session.
+    """
+    if open_visible:
+        return await _open_visible_browser(query)
+
+    results = await _ddg_api_search(query)
+    if not results:
+        results = await _playwright_search(query)
+    return _format_search_results(query, results)
 
 def browser_search_sync(query: str, open_visible: bool = False) -> str:
     """Synchronous wrapper for browser_search."""

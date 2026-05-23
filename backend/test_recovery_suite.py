@@ -62,23 +62,46 @@ async def test_tc077_network_drop_mid_browser():
 @pytest.mark.asyncio
 async def test_tc078_chromadb_unavailable_resilience():
     """TC_078 | ChromaDB Unavailable: Assert memory services gracefully decay (e.g. empty strings) if Chroma is down."""
-    with patch("services.memory_service.collection") as mock_collection:
-        # Simulate db crash
-        mock_collection.count.side_effect = Exception("ChromaDB Connection Rejected")
+    try:
+        import backend.services.memory_service as ms_backend
+    except ImportError:
+        ms_backend = None
+
+    with patch("services.memory_service.collection") as mock_col1:
+        mock_col1.count.side_effect = Exception("ChromaDB Connection Rejected")
+        mock_col1.query.side_effect = Exception("ChromaDB Connection Rejected")
         
-        # Retrieve should fail gracefully and return empty string (no crash in chat pipelines)
+        # Patch backend namespace if present
+        mock_col2 = None
+        if ms_backend:
+            mock_col2 = patch("backend.services.memory_service.collection").start()
+            mock_col2.count.side_effect = Exception("ChromaDB Connection Rejected")
+            mock_col2.query.side_effect = Exception("ChromaDB Connection Rejected")
+            
         try:
+            # Retrieve should fail gracefully and return empty string (no crash in chat pipelines)
             res = await retrieve_memory("my name")
             assert res == ""
         except Exception:
             pytest.fail("ChromaDB exception was not caught inside memory retrieve")
+        finally:
+            if mock_col2:
+                patch.stopall()
 
         # Store should catch, print warning, and return False (skipped) without crash
+        mock_col3 = None
+        if ms_backend:
+            mock_col3 = patch("backend.services.memory_service.collection").start()
+            mock_col3.add.side_effect = Exception("ChromaDB Connection Rejected")
+        
         try:
             stored = await store_memory("remember my name is Rudra")
             assert stored is False
         except Exception:
             pytest.fail("ChromaDB exception was not caught inside memory store")
+        finally:
+            if mock_col3:
+                patch.stopall()
 
 
 def test_tc079_sqlite_locked_concurrency():

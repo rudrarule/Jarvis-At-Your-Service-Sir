@@ -76,14 +76,21 @@ app = FastAPI(
 # CORS — allow the Vite dev server to call the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173",
+        "https://*.ngrok-free.app",
+        "https://*.ngrok-free.dev"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "ngrok-skip-browser-warning"],
 )
 
 
-@app.get("/")
+@app.get("/api/status")
 async def root():
     return {"status": "online", "system": "J.A.R.V.I.S", "version": "0.3.0", "memory": "ChromaDB RAG", "channels": ["web", "whatsapp"]}
 
@@ -659,3 +666,22 @@ async def wa_clear_calls():
 
 
 # Dynamic Uvicorn hot-reload trigger after .env update
+
+import os
+from fastapi.staticfiles import StaticFiles
+
+# Serve the compiled React Frontend at the root
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+if __name__ == "__main__":
+    import uvicorn
+    import sys
+    import asyncio
+    
+    if sys.platform == 'win32':
+        # Force ProactorEventLoop before uvicorn starts
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
+    uvicorn.run(app, host="0.0.0.0", port=8000)
