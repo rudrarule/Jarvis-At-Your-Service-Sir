@@ -17,7 +17,8 @@ from langgraph.graph.message import add_messages
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_aws import ChatBedrockConverse
 
 from workflows.tool_wrapper import ALL_TOOLS
@@ -39,6 +40,16 @@ def _clone_message(msg: BaseMessage) -> BaseMessage:
     if hasattr(msg, "copy"):
         return msg.copy(deep=True)
     return copy.deepcopy(msg)
+
+def _is_vision_capable(model_id: str) -> bool:
+    """Claude and Llama-4 Maverick (and Nova) can read images; Llama 3.x cannot.
+
+    Used so we don't downgrade a vision-capable agent model (e.g. Claude Sonnet)
+    back to the fallback Maverick vision model just because a screenshot appeared.
+    """
+    mid = (model_id or "").lower()
+    return ("claude" in mid) or ("maverick" in mid) or ("nova" in mid)
+
 
 def _get_llm(model_id: str, region: str) -> ChatBedrockConverse:
     """Returns a cached LLM instance, creating one if needed."""
@@ -64,18 +75,29 @@ class AgentState(TypedDict, total=False):
     last_observation: dict[str, Any]
     last_observation_id: str
     last_page_fingerprint: str
-    last_element_ids: list[int]
+    last_element_ids: list[Any]
+    interactive_registry: dict[str, Any]
     blocked_tool_call: bool
     final_status: str
     task_progress: list[str]  # Track completed sub-tasks for progress awareness
     stale_iterations: int  # Consecutive iterations with no tool calls (stale loop detection)
     file_write_completed: bool  # Set True when file_write tool succeeds — signals task is likely done
+    token_usage: dict[str, int]  # Accumulated token usage {"input": 0, "output": 0, "total": 0}
+    token_budget: int  # Token limit budget ceiling
 
 # ── Graph Edges ───────────────────────────────────────────
 def should_continue(state: AgentState):
     """Determine whether to route to tools or end the conversation."""
     messages = state['messages']
     last_message = messages[-1]
+    
+    # ── Token Budget Check ──
+    token_usage = state.get("token_usage") or {}
+    total_tokens = token_usage.get("total", 0)
+    token_budget = state.get("token_budget", int(os.getenv("JARVIS_TOKEN_BUDGET", "200000")))
+    if total_tokens > token_budget:
+        print(f"[Graph] Token budget exceeded: {total_tokens}/{token_budget} — halting")
+        return "loop_halt"
     
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
         # stale_iterations is already set by call_model (0 if tool calls, +1 if not)
@@ -89,6 +111,11 @@ def should_continue(state: AgentState):
             return END
         
         # ── Stale Loop Detection ──
+        missing_research = _missing_required_research_terms(state)
+        if missing_research and stale <= 2:
+            print(f"[Graph] Missing required comparison research: {', '.join(missing_research)}")
+            return "retry"
+
         if stale >= 3:
             print(f"[Graph] Stale loop detected: {stale} consecutive iterations with no tool calls — terminating")
             return "loop_halt"
@@ -96,11 +123,27 @@ def should_continue(state: AgentState):
         # ── Intent-Without-Action Detection ──
         # If the LLM says "I will now...", route back so it can actually make the tool call
         content = str(getattr(last_message, 'content', '') or '')
-        intent_phrases = ["i will now", "let me", "now i will", "i shall", "i'll now", "next, i will", "i will search", "i will open", "i will navigate"]
+        intent_phrases = [
+            "i will now", "let me", "now i will", "i shall", "i'll now", "next, i will",
+            "i will search", "i will open", "i will navigate", "i will check",
+            "i'll check", "allow me", "allow me to", "certainly, sir", "right away",
+            "one moment", "give me a moment", "let me check", "i'll take a look",
+            "i will take a look", "checking the", "let me find", "i'll find",
+        ]
         if any(phrase in content.lower() for phrase in intent_phrases) and stale <= 1:
             print(f"[Graph] Intent-without-action detected — routing back to agent for tool call")
             return "retry"
-        
+
+        # ── Grounded-Evidence Gate (anti-hallucination, flag-gated) ──
+        # Don't let the agent finish a web task by stating facts (prices/numbers) that
+        # never appeared in a page it actually observed. Force one more observe instead.
+        if os.getenv("JARVIS_GROUNDED_ANSWERS", "false").lower() in {"1", "true", "yes", "on"} \
+                and _used_browser(state) and not state.get("file_write_completed"):
+            answer = str(getattr(last_message, "content", "") or "")
+            if answer and not _answer_is_grounded(answer, state) and stale < 2:
+                print("[Grounding] Final answer not supported by observations — forcing re-observe")
+                return "retry"
+
         return END
     if state.get("iteration", 0) >= MAX_AGENT_ITERATIONS:
         return "loop_halt"
@@ -118,6 +161,70 @@ def _safe_json(value: Any) -> str:
         return str(value)
 
 
+def _safe_console_text(value: Any) -> str:
+    return str(value).encode("ascii", "replace").decode("ascii")
+
+
+def _first_user_text(state: AgentState) -> str:
+    for msg in state.get("messages", []):
+        if isinstance(msg, HumanMessage):
+            return str(getattr(msg, "content", "") or "")
+    return ""
+
+
+def _browser_history_mentions(state: AgentState, term: str) -> bool:
+    needle = term.lower()
+    for record in state.get("tool_history", []) or []:
+        if record.get("phase") != "guard":
+            continue
+        tool_name = str(record.get("tool") or "")
+        if not tool_name.startswith("browser_"):
+            continue
+        haystack = _safe_json(record.get("arguments") or {}).lower()
+        if needle in haystack:
+            return True
+    return False
+
+
+def _requested_output_path(goal: str) -> str:
+    matches = re.findall(r"\b[A-Za-z0-9_\-./\\]+(?:\.(?:txt|md|json|py))\b", goal)
+    return matches[-1].replace("\\", "/").lstrip("/") if matches else ""
+
+
+def _normalized_file_path(path: Any) -> str:
+    return str(path or "").replace("\\", "/").lstrip("/")
+
+
+def _required_goal_terms(goal: str) -> list[str]:
+    text = goal.lower()
+    terms: list[str] = []
+    for term in (
+        "iphone",
+        "amazon",
+        "flipkart",
+        "nvidia",
+        "amd",
+        "apple",
+    ):
+        if term in text:
+            terms.append(term)
+    return terms
+
+
+def _missing_required_content_terms(goal: str, content: str) -> list[str]:
+    content_lower = content.lower()
+    required = _required_goal_terms(goal)
+    return [term for term in required if term not in content_lower]
+
+
+def _missing_required_research_terms(state: AgentState) -> list[str]:
+    goal = _first_user_text(state).lower()
+    if not any(word in goal for word in ("compare", "comparison", "versus", " vs ", "price", "deal", "deals", "revenue")):
+        return []
+    terms = _required_goal_terms(goal)
+    return [term for term in terms if not _browser_history_mentions(state, term)]
+
+
 def _parse_tool_payload(content: Any) -> dict[str, Any]:
     if isinstance(content, dict):
         return content
@@ -128,6 +235,40 @@ def _parse_tool_payload(content: Any) -> dict[str, Any]:
         except json.JSONDecodeError:
             return {"raw": content}
     return {"raw": str(content)}
+
+
+# ── Grounded-Evidence helpers (anti-hallucination) ──
+def _collect_observation_text(state: AgentState) -> str:
+    """All real page content the agent actually observed this run (browser_observe payloads)."""
+    chunks = []
+    last = state.get("last_observation") or {}
+    if isinstance(last, dict):
+        chunks.append(str(last.get("summary", "")) + " " + str(last.get("accessibility_tree", "")))
+    for m in state.get("messages", []):
+        if isinstance(m, ToolMessage):
+            payload = _parse_tool_payload(m.content)
+            if str(payload.get("action")) == "browser_observe":
+                data = payload.get("data") or {}
+                chunks.append(str(data.get("summary", "")) + " " + str(data.get("accessibility_tree", "")))
+    return " ".join(chunks).lower()
+
+
+def _used_browser(state: AgentState) -> bool:
+    return any(str(r.get("tool", "")).startswith("browser_") for r in (state.get("tool_history") or []))
+
+
+def _answer_is_grounded(answer: str, state: AgentState) -> bool:
+    """A factual answer must share specific numeric claims with observed page text.
+    Pure prose with no hard claims passes; money/numbers must be backed by an observation."""
+    obs = _collect_observation_text(state)
+    if not obs:
+        return False  # browser task but nothing observed -> not grounded
+    claims = re.findall(r'(?:rs\.?|₹|\$)\s?\d[\d,]*|\b\d{2,}\b', answer.lower())
+    if not claims:
+        return True  # no hard factual claims to verify
+    obs_digits = re.sub(r'[^\d]', '', obs)
+    backed = sum(1 for c in claims if re.sub(r'[^\d]', '', c) and re.sub(r'[^\d]', '', c) in obs_digits)
+    return backed >= max(1, len(claims) // 2)
 
 
 def _tool_call_name(call: dict[str, Any]) -> str:
@@ -151,6 +292,12 @@ def _tool_call_id(call: dict[str, Any]) -> str:
 
 
 def _page_fingerprint(data: dict[str, Any]) -> str:
+    ax_tree = data.get("accessibility_tree", "")
+    if ax_tree:
+        standardized_tree = re.sub(r"\s+", " ", ax_tree).strip()
+        basis = f"{data.get('url', '')}:{standardized_tree}"
+        return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+
     elements = data.get("interactive_elements") or []
     compact_elements = [
         {
@@ -205,11 +352,21 @@ def _score_tool_call(call: dict[str, Any], state: AgentState) -> tuple[float, st
             return 0.40, "type_action_requires_text"
         if not state.get("last_observation_id"):
             return 0.30, "browser_interact_requires_recent_observation"
-        try:
-            element_id_int = int(element_id)
-        except (ValueError, TypeError):
-            element_id_int = element_id
-        if element_id_int not in set(state.get("last_element_ids") or []):
+        
+        allowed_ids = set(state.get("last_element_ids") or [])
+        is_valid = (element_id in allowed_ids)
+        if not is_valid:
+            try:
+                is_valid = (int(element_id) in allowed_ids)
+            except (ValueError, TypeError):
+                pass
+        if not is_valid:
+            try:
+                is_valid = (str(element_id) in allowed_ids)
+            except (ValueError, TypeError):
+                pass
+                
+        if not is_valid:
             return 0.42, "element_id_not_in_latest_observation"
         return 0.92, "grounded_element_id"
 
@@ -225,9 +382,19 @@ def _score_tool_call(call: dict[str, Any], state: AgentState) -> tuple[float, st
     if name == "file_write":
         path = args.get("path")
         content = args.get("content")
-        if isinstance(path, str) and re.search(r"\.(txt|md|json|py)$", path, re.IGNORECASE) and isinstance(content, str):
-            return 0.88, "valid_file_write"
-        return 0.35, "file_write_requires_safe_path_and_content"
+        if not (isinstance(path, str) and re.search(r"\.(txt|md|json|py)$", path, re.IGNORECASE) and isinstance(content, str)):
+            return 0.35, "file_write_requires_safe_path_and_content"
+        goal = _first_user_text(state)
+        requested_path = _requested_output_path(goal)
+        if requested_path and _normalized_file_path(path).lower() != requested_path.lower():
+            return 0.35, f"file_write_path_mismatch_expected_{requested_path}"
+        missing_terms = _missing_required_research_terms(state)
+        if missing_terms:
+            return 0.35, "file_write_missing_required_research_" + "_".join(missing_terms)
+        missing_content_terms = _missing_required_content_terms(goal, content)
+        if missing_content_terms:
+            return 0.35, "file_write_content_missing_" + "_".join(missing_content_terms)
+        return 0.88, "valid_file_write"
 
     if name in {"file_read", "file_list", "file_search", "weather_check", "whatsapp_check_messages"}:
         return 0.82, "valid_low_risk_tool"
@@ -238,6 +405,42 @@ def _score_tool_call(call: dict[str, Any], state: AgentState) -> tuple[float, st
         return 0.30, "whatsapp_send_requires_contact_and_message"
 
     return 0.65, "known_tool"
+
+
+def _extract_token_usage(response: Any) -> dict[str, int]:
+    """Extracts input and output tokens from AIMessage in a model-agnostic way."""
+    input_tokens = 0
+    output_tokens = 0
+    
+    # 1. Try standard langchain usage_metadata
+    usage_metadata = getattr(response, "usage_metadata", None)
+    if isinstance(usage_metadata, dict):
+        input_tokens = usage_metadata.get("input_tokens", 0)
+        output_tokens = usage_metadata.get("output_tokens", 0)
+        
+    # 2. Try response_metadata
+    if not input_tokens or not output_tokens:
+        response_metadata = getattr(response, "response_metadata", {})
+        if isinstance(response_metadata, dict):
+            # Check for standard 'usage' key
+            usage = response_metadata.get("usage", {})
+            if isinstance(usage, dict):
+                input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+                output_tokens = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+            
+            # Check for Bedrock-specific invocation metrics
+            if not input_tokens or not output_tokens:
+                metrics = response_metadata.get("amazon-bedrock-invocationMetrics", {})
+                if isinstance(metrics, dict):
+                    input_tokens = metrics.get("inputTokenCount") or 0
+                    output_tokens = metrics.get("outputTokenCount") or 0
+                    
+    total_tokens = input_tokens + output_tokens
+    return {
+        "input": input_tokens,
+        "output": output_tokens,
+        "total": total_tokens
+    }
 
 
 async def _emit_graph_event(event_type: str, payload: dict[str, Any], level: str = "info") -> None:
@@ -434,7 +637,7 @@ def _apply_sliding_window(messages: list[BaseMessage], tool_history: list[dict],
     for record in tool_history:
         if record.get("phase") == "result":
             tool_name = record.get("tool", "unknown")
-            success = "✓" if record.get("success") else "✗"
+            success = "ok" if record.get("success") else "failed"
             error = record.get("error", "")
             if tool_name == "browser_observe":
                 summary_lines.append(f"  {success} Observed page")
@@ -465,7 +668,7 @@ def _apply_sliding_window(messages: list[BaseMessage], tool_history: list[dict],
     summary_msg = HumanMessage(content=summary_text)
     
     compressed = system_msgs + [goal_msg, summary_msg] + recent_messages
-    print(f"[SlidingWindow] Compressed {len(messages)} messages → {len(compressed)} (dropped {len(old_messages)} old exchange messages)")
+    print(f"[SlidingWindow] Compressed {len(messages)} messages -> {len(compressed)} (dropped {len(old_messages)} old exchange messages)")
     return compressed
 
 
@@ -488,7 +691,7 @@ def build_master_graph():
         # 1. Dynamic Model Routing via config
         model_id = config.get("configurable", {}).get(
             "model_id", 
-            os.getenv("CLAUDE_MODEL_ID", "meta.llama3-3-70b-instruct-v1:0")
+            os.getenv("CLAUDE_MODEL_ID", "us.amazon.nova-pro-v1:0")
         )
         region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
         
@@ -511,7 +714,7 @@ def build_master_graph():
                     break
         
         # 2. Vision Check: If history has images, we MUST use a vision-capable model
-        vision_model_id = os.getenv("CLAUDE_MODEL_ID", "us.meta.llama4-maverick-17b-instruct-v1:0")
+        vision_model_id = os.getenv("CLAUDE_MODEL_ID", "us.amazon.nova-pro-v1:0")
         has_images = False
         for m in messages:
             if hasattr(m, "content") and isinstance(m.content, list):
@@ -519,13 +722,30 @@ def build_master_graph():
                     has_images = True
                     break
         
-        if has_images and model_id != vision_model_id:
-            print(f"[Vision] Sticky Vision: History contains images, forcing {vision_model_id}")
+        if has_images and not _is_vision_capable(model_id):
+            print(f"[Vision] {model_id} is text-only and history has images — switching to {vision_model_id}")
             model_id = vision_model_id
 
         # 3. Cached LLM instance
         llm = _get_llm(model_id, region)
-        bound_llm = llm.bind_tools(ALL_TOOLS)
+        
+        # ── Dynamic Tool Binding by Context ──
+        active_tools = list(ALL_TOOLS)
+        if state.get("file_write_completed"):
+            active_tools = [t for t in active_tools if not t.name.startswith("browser_")]
+            print(f"[DynTools] File written — stripped browser tools ({len(active_tools)} remaining)")
+            
+        tool_history = state.get("tool_history") or []
+        last_action = None
+        for record in reversed(tool_history):
+            if record.get("phase") == "result":
+                last_action = record.get("tool")
+                break
+        if last_action == "browser_observe":
+            active_tools = [t for t in active_tools if t.name != "file_search"]
+            print(f"[DynTools] Last action was browser_observe — stripped file_search ({len(active_tools)} remaining)")
+            
+        bound_llm = llm.bind_tools(active_tools)
         
         # 4. Prune old images to stay under model limits (e.g. Bedrock max 3)
         _prune_old_images(messages, keep_count=2)
@@ -541,11 +761,12 @@ def build_master_graph():
         # 5. Vision: Extract screenshot from the latest tool result
         screenshot_b64 = _extract_screenshot_from_tool_results(messages)
         if screenshot_b64:
-            # Re-bind to vision model if we just found a new screenshot
-            if model_id != vision_model_id:
+            # Only swap to the fallback vision model if the current model can't see.
+            # A vision-capable agent (Claude Sonnet) keeps handling its own screenshots.
+            if not _is_vision_capable(model_id):
                 model_id = vision_model_id
                 llm = _get_llm(model_id, region)
-                bound_llm = llm.bind_tools(ALL_TOOLS)
+                bound_llm = llm.bind_tools(active_tools)
             
             # Inject multimodal content DIRECTLY into the ToolMessage to satisfy Bedrock's turn rules.
             # Find the most recent ToolMessage
@@ -587,6 +808,19 @@ def build_master_graph():
                 response = await bound_llm.ainvoke(cleaned_messages)
             else:
                 raise
+                
+        # Accumulate and record token usage
+        usage = _extract_token_usage(response)
+        current_usage = dict(state.get("token_usage") or {"input": 0, "output": 0, "total": 0})
+        current_usage["input"] += usage["input"]
+        current_usage["output"] += usage["output"]
+        current_usage["total"] = current_usage["input"] + current_usage["output"]
+        
+        await _emit_graph_event("agent.token_usage", {
+            "iteration": iteration,
+            "session_tokens": current_usage,
+            "step_tokens": usage
+        })
         
         # 5. Llama Tool Call Interceptor (catches ALL hallucination formats)
         #    Llama outputs tool calls inconsistently:
@@ -613,6 +847,22 @@ def build_master_graph():
                         pass
             
             # Strategy 2: Python-style function calls: tool_name(arg=val, ...)
+            #   OR positional: tool_name("value")  <-- Llama frequently narrates this
+            #   form, e.g. browser_open_url("https://..."). The old code only parsed
+            #   keyword args, so positional calls produced EMPTY args and the action
+            #   never executed (agent stalled on its own narration). Map a lone
+            #   positional value onto each tool's primary parameter.
+            _PRIMARY_PARAM = {
+                "browser_open_url": "url",
+                "browser_search": "query",
+                "browser_scroll": "direction",
+                "browser_select_date": "date",
+                "file_read": "path",
+                "file_list": "path",
+                "file_search": "query",
+                "weather_check": "location",
+                "whatsapp_check_messages": None,
+            }
             if not parsed_calls:
                 pattern = r'(' + '|'.join(re.escape(n) for n in tool_names) + r')\s*\(([^)]*)\)'
                 py_matches = re.findall(pattern, response.content)
@@ -621,10 +871,19 @@ def build_master_graph():
                     if args_str.strip():
                         kv_pairs = re.findall(r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|(\d+))', args_str)
                         for key, str_val, str_val2, int_val in kv_pairs:
-                            if int_val:
+                            if int_val and not (str_val or str_val2):
                                 args[key] = int(int_val)
                             else:
                                 args[key] = str_val or str_val2
+                        # Positional fallback: tool("value") with no key=value pairs.
+                        if not args:
+                            prim = _PRIMARY_PARAM.get(name)
+                            if prim:
+                                pm = re.search(r'''["']([^"']+)["']''', args_str)
+                                if not pm:  # bare token, e.g. browser_scroll(down)
+                                    pm = re.search(r'([^\s,()"\']+)', args_str)
+                                if pm:
+                                    args[prim] = pm.group(1)
                     parsed_calls.append({"name": name, "args": args})
             
             # Apply only the FIRST parsed call to enforce step-by-step ReAct loop
@@ -688,7 +947,12 @@ def build_master_graph():
         with open(r"c:\Users\Rudra\holo-core-nexus\backend\data\graph_debug.log", "a", encoding="utf-8") as f:
             f.write(f"Response: {response}\n")
                     
-        return {"messages": updated_messages_for_state + [response], "iteration": iteration, "stale_iterations": stale_count}
+        return {
+            "messages": updated_messages_for_state + [response],
+            "iteration": iteration,
+            "stale_iterations": stale_count,
+            "token_usage": current_usage
+        }
 
     async def guard_tool_call(state: AgentState) -> AgentState:
         messages = state.get("messages", [])
@@ -818,13 +1082,19 @@ def build_master_graph():
                 element_ids = [
                     item.get("id")
                     for item in elements
-                    if isinstance(item, dict) and isinstance(item.get("id"), int)
+                    if isinstance(item, dict) and item.get("id") is not None
                 ]
+                registry_snapshot = {
+                    str(item.get("id")): item
+                    for item in elements
+                    if isinstance(item, dict) and item.get("id") is not None
+                }
                 updates.update({
                     "last_observation": data,
                     "last_observation_id": observation_id,
                     "last_page_fingerprint": fingerprint,
                     "last_element_ids": element_ids,
+                    "interactive_registry": registry_snapshot,
                 })
 
             await _emit_graph_event(
@@ -850,9 +1120,10 @@ def build_master_graph():
                     before_title = interact_data.get("before_title", "")
                     after_title = interact_data.get("after_title", "")
                     url_changed = interact_data.get("url_changed", False)
-                    progress_entry = f"✅ Clicked element #{element_id}"
+                    progress_entry = f"Clicked element #{element_id}"
                     if url_changed and after_title:
-                        progress_entry += f" → {after_title[:50]}"
+                        progress_entry += f" -> {after_title[:50]}"
+                    progress_entry = _safe_console_text(progress_entry)
                     task_progress = list(state.get("task_progress") or [])
                     task_progress.append(progress_entry)
                     # Keep only the last 20 entries to prevent bloat
@@ -865,40 +1136,86 @@ def build_master_graph():
             if action == "file_write" and success:
                 file_path = (payload.get("data") or {}).get("path", "unknown")
                 task_progress = list(updates.get("task_progress") or state.get("task_progress") or [])
-                task_progress.append(f"📄 Wrote file: {file_path}")
+                task_progress.append(f"Wrote file: {file_path}")
                 updates["task_progress"] = task_progress[-20:]
                 updates["file_write_completed"] = True
-                print(f"[TaskProgress] File write completed: {file_path} — agent will wrap up")
+                print(f"[TaskProgress] File write completed: {file_path}; agent will wrap up")
 
         updates["tool_history"] = tool_history[-40:]
         updates["tool_failures"] = tool_failures
         return updates
 
     async def loop_halt(state: AgentState) -> AgentState:
+        token_usage = state.get("token_usage") or {}
+        total_tokens = token_usage.get("total", 0)
+        token_budget = state.get("token_budget", int(os.getenv("JARVIS_TOKEN_BUDGET", "200000")))
+        is_budget_exceeded = total_tokens > token_budget
+        reason = "token_budget_exceeded" if is_budget_exceeded else "max_iterations_reached"
+        
         await _emit_graph_event(
             "agent.loop_halted",
             {
                 "iteration": state.get("iteration", 0),
                 "max_iterations": MAX_AGENT_ITERATIONS,
+                "reason": reason,
+                "token_usage": token_usage,
+                "token_budget": token_budget,
                 "tool_history": state.get("tool_history", [])[-6:],
             },
             level="warning",
         )
+        
+        if is_budget_exceeded:
+            content = (
+                f"I stopped the task because the token budget was exceeded ({total_tokens}/{token_budget} tokens). "
+                "This prevents runaway API costs. Please refine the goal or increase the budget to continue."
+            )
+            final_status = "budget_exceeded"
+        else:
+            content = (
+                "I stopped the task before it could loop further. "
+                "I could not verify enough progress to continue safely."
+            )
+            final_status = "loop_halted"
+            
         return {
             "messages": [
-                AIMessage(
-                    content=(
-                        "I stopped the task before it could loop further. "
-                        "I could not verify enough progress to continue safely."
-                    )
-                )
+                AIMessage(content=content)
             ],
-            "final_status": "loop_halted",
+            "final_status": final_status,
         }
 
     async def handle_intent_retry(state: AgentState) -> AgentState:
         from langchain_core.messages import HumanMessage
         print(f"[Graph] Appending retry message to force tool call execution and keep user/assistant message structure alternating")
+        # Grounded-evidence nudge: a browser task must back every fact with an observation.
+        if os.getenv("JARVIS_GROUNDED_ANSWERS", "false").lower() in {"1", "true", "yes", "on"} and _used_browser(state):
+            return {
+                "messages": [
+                    HumanMessage(
+                        content=(
+                            "Do not state any price, number, or fact unless it appears in a page you actually "
+                            "read with browser_observe. If you have not read it on the page yet, use "
+                            "browser_open_url to open the real site and browser_observe first. If you still "
+                            "cannot verify it, say so plainly instead of guessing."
+                        )
+                    )
+                ]
+            }
+        missing_research = _missing_required_research_terms(state)
+        if missing_research:
+            terms = ", ".join(missing_research)
+            return {
+                "messages": [
+                    HumanMessage(
+                        content=(
+                            f"Do not ask the user for permission yet. You still need to research: {terms}. "
+                            f"Use browser_open_url or browser_interact to search the web for {terms} quarterly revenue, "
+                            "then observe the results. Only write the output file after every required company has been researched."
+                        )
+                    )
+                ]
+            }
         return {
             "messages": [
                 HumanMessage(
@@ -924,9 +1241,21 @@ def build_master_graph():
     workflow.add_edge("loop_halt", END)
     workflow.add_edge("intent_retry", "agent")
     
-    # Compile with MemorySaver for conversation persistence across sessions
-    memory = MemorySaver()
-    app = workflow.compile(checkpointer=memory)
+    # Async graph invocations cannot use the sync SqliteSaver checkpointer.
+    # Keep checkpoints opt-in until the async sqlite saver is wired in.
+    if os.getenv("JARVIS_GRAPH_CHECKPOINTS", "").lower() in {"1", "true", "yes", "on"}:
+        db_path = os.getenv("JARVIS_GRAPH_DB")
+        if not db_path:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            db_dir = os.path.abspath(os.path.join(current_dir, "..", "db"))
+            os.makedirs(db_dir, exist_ok=True)
+            db_path = os.path.join(db_dir, "jarvis_graph.db")
+
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        memory = SqliteSaver(conn)
+        app = workflow.compile(checkpointer=memory)
+    else:
+        app = workflow.compile()
     return app
 
 # Singleton graph instance

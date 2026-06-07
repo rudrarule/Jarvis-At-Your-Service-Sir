@@ -5,11 +5,15 @@ to support LangGraph ReAct agent loops and multi-step workflows.
 """
 import asyncio
 import base64
+import json
 import os
 import re
+import time
 import urllib.parse
 from typing import Any, Dict, List, Optional
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout, Page, Browser, BrowserContext
+from tools.browser_state import observe_page_state, get_active_registry, get_accessibility_tree
+
 
 def _format_response(success: bool, action: str, observation: str, data: Any = None, error: Optional[str] = None) -> Dict[str, Any]:
     return {
@@ -20,11 +24,55 @@ def _format_response(success: bool, action: str, observation: str, data: Any = N
         "error": error
     }
 
+
+def _debug_dir() -> Optional[str]:
+    path = os.getenv("JARVIS_E2E_DEBUG_DIR")
+    if not path:
+        return None
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+async def _capture_debug_artifacts(page: Page, label: str, extra: Optional[dict[str, Any]] = None) -> None:
+    """Persist page artifacts for e2e failure triage when debug mode is enabled."""
+    path = _debug_dir()
+    if not path:
+        return
+
+    safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "_", label).strip("_")[:80] or "browser"
+    stamp = f"{int(time.time() * 1000)}_{safe_label}"
+    meta: dict[str, Any] = {"label": label, "extra": extra or {}}
+    try:
+        meta["url"] = page.url
+        meta["title"] = await page.title()
+        meta["visible_text"] = (await page.evaluate("() => document.body ? document.body.innerText : ''") or "")[:8000]
+    except Exception as exc:
+        meta["metadata_error"] = str(exc)
+
+    try:
+        await page.screenshot(path=os.path.join(path, f"{stamp}.png"), full_page=True)
+        meta["screenshot"] = f"{stamp}.png"
+    except Exception as exc:
+        meta["screenshot_error"] = str(exc)
+
+    try:
+        html = await page.content()
+        html_name = f"{stamp}.html"
+        with open(os.path.join(path, html_name), "w", encoding="utf-8") as fh:
+            fh.write(html)
+        meta["html"] = html_name
+    except Exception as exc:
+        meta["html_error"] = str(exc)
+
+    with open(os.path.join(path, f"{stamp}.json"), "w", encoding="utf-8") as fh:
+        json.dump(meta, fh, ensure_ascii=False, indent=2, default=str)
+
 class BrowserStateManager:
     _playwright = None
     _browser: Optional[Browser] = None
     _context: Optional[BrowserContext] = None
     _page: Optional[Page] = None
+    _is_cdp: bool = False  # True when attached to a user-run Chrome over CDP
     _lock = asyncio.Lock()
 
     @classmethod
@@ -32,53 +80,38 @@ class BrowserStateManager:
         async with cls._lock:
             if cls._page and not cls._page.is_closed():
                 return cls._page
-            
+
             if not cls._playwright:
                 import sys
                 if sys.platform == 'win32':
-                    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                    # A Proactor loop is required to SPAWN a browser subprocess.
+                    # CDP-attach (preferred) does not spawn, so this only matters for
+                    # the launch fallback. Best-effort; harmless if the loop already exists.
+                    try:
+                        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                    except Exception:
+                        pass
                 cls._playwright = await async_playwright().start()
-            
+
             from dotenv import load_dotenv
             env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
             load_dotenv(env_path, override=True)
-            
-            # Force foreground browser mode regardless of terminal state
-            headless = os.getenv("BROWSER_HEADLESS", "false").lower() == "true"
-            user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "browser_user_data"))
-            
+
             if not cls._context:
-                launch_args = {
-                    "headless": headless,
-                    "viewport": {'width': 1280, 'height': 800},
-                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "args": ["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox", "--disable-blink-features=AutomationControlled"],
-                }
-                try:
-                    cls._context = await cls._playwright.chromium.launch_persistent_context(
-                        user_data_dir=user_data_dir,
-                        **launch_args,
-                    )
-                except Exception as e:
-                    if "profile is already in use" not in str(e).lower() and "existing browser session" not in str(e).lower():
-                        raise
-                    fallback_dir = os.path.abspath(os.path.join(
-                        os.path.dirname(__file__),
-                        "..",
-                        f"browser_user_data_{os.getpid()}_{int(asyncio.get_running_loop().time() * 1000)}",
-                    ))
-                    print(f"[BrowserStateManager] Browser profile locked, using temporary profile: {fallback_dir}")
-                    cls._context = await cls._playwright.chromium.launch_persistent_context(
-                        user_data_dir=fallback_dir,
-                        **launch_args,
-                    )
-            
+                cls._context = await cls._acquire_context()
+
             try:
                 cls._page = cls._context.pages[0] if cls._context.pages else await cls._context.new_page()
-                
-                # Anti-detection stealth scripts
-                await cls._page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                
+
+                # Anti-detection stealth scripts (best-effort: may be unsupported on an
+                # attached page; only affects future navigations, never blocks).
+                try:
+                    await cls._page.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                    )
+                except Exception:
+                    pass
+
                 return cls._page
             except Exception as e:
                 # If the context crashed (TargetClosedError), wipe it and recursively rebuild
@@ -87,13 +120,110 @@ class BrowserStateManager:
                 cls._page = None
                 # Release the lock briefly to avoid deadlocks on recursive call
                 pass
-        
+
         # Call outside the lock if we had an exception
         return await cls.get_page()
 
     @classmethod
+    async def _acquire_context(cls) -> BrowserContext:
+        """Acquire a browser context using the most reliable strategy available.
+
+        Strategy 1 - CDP attach (preferred; enabled by BROWSER_CDP_URL):
+          Connects to an ALREADY-RUNNING Chrome via the DevTools protocol. This does
+          NOT spawn a browser subprocess, so it sidesteps the Windows SelectorEventLoop
+          `NotImplementedError` that breaks launch_persistent_context, and it reuses the
+          user's real, logged-in profile (login flows just work).
+
+          Start Chrome once, e.g.:
+            chrome.exe --remote-debugging-port=9222 --user-data-dir="C:/jarvis-chrome"
+          then set in backend/.env:
+            BROWSER_CDP_URL=http://localhost:9222
+
+        Strategy 2 - launch a managed Chromium (original behavior; fallback).
+        """
+        cdp_url = os.getenv("BROWSER_CDP_URL", "").strip()
+        if cdp_url:
+            try:
+                cls._browser = await cls._playwright.chromium.connect_over_cdp(cdp_url, timeout=15000)
+                contexts = cls._browser.contexts
+                ctx = contexts[0] if contexts else await cls._browser.new_context(
+                    viewport={'width': 1280, 'height': 800},
+                )
+                cls._is_cdp = True
+                print(f"[BrowserStateManager] Attached to running Chrome over CDP at {cdp_url} "
+                      f"({len(ctx.pages)} open tab(s)). Using the real, logged-in browser.")
+                return ctx
+            except Exception as e:
+                print(f"[BrowserStateManager] CDP attach to {cdp_url} failed ({e}); "
+                      f"falling back to launching a managed Chromium.")
+
+        cls._is_cdp = False
+        return await cls._launch_persistent_context()
+
+    @classmethod
+    async def _launch_persistent_context(cls) -> BrowserContext:
+        # Force foreground browser mode regardless of terminal state
+        headless = os.getenv("BROWSER_HEADLESS", "false").lower() == "true"
+        user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "browser_user_data"))
+        launch_args = {
+            "headless": headless,
+            "viewport": {'width': 1280, 'height': 800},
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "args": ["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox", "--disable-blink-features=AutomationControlled"],
+        }
+        try:
+            return await cls._playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                **launch_args,
+            )
+        except NotImplementedError:
+            # Windows SelectorEventLoop cannot spawn a subprocess. Retrying with a
+            # different profile hits the SAME error, so fail loudly with the actual fix
+            # instead of silently spawning throwaway browser_user_data_* profiles.
+            print(
+                "[BrowserStateManager] launch_persistent_context raised NotImplementedError: "
+                "the running event loop is a SelectorEventLoop and cannot spawn a browser "
+                "subprocess. FIX: set BROWSER_CDP_URL (e.g. http://localhost:9222) to attach to "
+                "a Chrome started with --remote-debugging-port=9222, OR run the server on a "
+                "WindowsProactorEventLoop."
+            )
+            raise
+        except Exception as e:
+            fallback_dir = os.path.abspath(os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                f"browser_user_data_{os.getpid()}_{int(asyncio.get_running_loop().time() * 1000)}",
+            ))
+            print(f"[BrowserStateManager] Persistent launch failed ({e}), using temporary profile: {fallback_dir}")
+            return await cls._playwright.chromium.launch_persistent_context(
+                user_data_dir=fallback_dir,
+                **launch_args,
+            )
+
+    @classmethod
     async def close_all(cls):
         async with cls._lock:
+            # When attached to the user's real Chrome over CDP, do NOT close their
+            # context/tabs. browser.close() on a CDP connection only detaches Playwright
+            # and leaves the user's Chrome (and logins) running.
+            if cls._is_cdp:
+                if cls._browser:
+                    try:
+                        await cls._browser.close()  # disconnect CDP session only
+                    except Exception:
+                        pass
+                cls._browser = None
+                cls._context = None
+                cls._page = None
+                cls._is_cdp = False
+                if cls._playwright:
+                    try:
+                        await cls._playwright.stop()
+                    except Exception:
+                        pass
+                    cls._playwright = None
+                return
+
             if cls._context:
                 try:
                     await cls._context.close()
@@ -149,12 +279,34 @@ async def take_screenshot() -> dict:
 
 # --- Navigation & Control ---
 
+def _sanitize_url_arg(raw: str) -> str:
+    """Extract just the URL from an argument.
+
+    Llama frequently passes the whole instruction as the url, e.g.
+    'https://skyscanner.co.in and tell me the title', which then fails DNS with
+    ERR_NAME_NOT_RESOLVED. Keep only the URL token.
+    """
+    if not raw or not isinstance(raw, str):
+        return raw
+    raw = raw.strip().strip('"\'')
+    m = re.search(r'https?://[^\s"\'<>]+', raw)
+    if m:
+        return m.group(0).rstrip('.,)\'"')
+    m = re.search(r'\b[\w-]+(?:\.[\w-]+)+(?:/[^\s"\'<>]*)?', raw)  # bare domain
+    if m:
+        return m.group(0).rstrip('.,)\'"')
+    return raw.split()[0] if raw.split() else raw
+
+
 async def open_url(url: str) -> dict:
+    url = _sanitize_url_arg(url)
     if not url.startswith(('http://', 'https://')):
         url = f"https://{url}"
     try:
         page = await BrowserStateManager.get_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        if os.getenv("JARVIS_E2E_CAPTURE_EACH_ACTION", "").lower() in {"1", "true", "yes", "on"}:
+            await _capture_debug_artifacts(page, "after_open_url", {"target_url": url})
         return _format_response(True, "open_url", f"Navigated to {url}", {"url": page.url})
     except Exception as e:
         import traceback
@@ -162,6 +314,11 @@ async def open_url(url: str) -> dict:
         with open(r"c:\Users\Rudra\holo-core-nexus\backend\data\graph_debug.log", "a", encoding="utf-8") as f:
             f.write(f"[Browser Error] {trace}\n")
         err_msg = str(e) if str(e) else type(e).__name__
+        try:
+            page = await BrowserStateManager.get_page()
+            await _capture_debug_artifacts(page, "open_url_failed", {"target_url": url, "error": err_msg})
+        except Exception:
+            pass
         return _format_response(False, "open_url", f"Failed to navigate to {url}", error=err_msg)
 
 async def get_current_url() -> dict:
@@ -440,12 +597,15 @@ async def inject_element_markers() -> dict:
 async def interact_by_id(element_id: int, action: str, text: str = "", press_enter: bool = True) -> dict:
     try:
         page = await BrowserStateManager.get_page()
+        capture_each = os.getenv("JARVIS_E2E_CAPTURE_EACH_ACTION", "").lower() in {"1", "true", "yes", "on"}
         
         selector = f"[data-jarvis-id='{element_id}']"
         element = page.locator(selector).first
         
         # Ensure element exists
         if await element.count() == 0:
+            if capture_each:
+                await _capture_debug_artifacts(page, "interact_by_id_missing_element", {"element_id": element_id, "action": action})
             return _format_response(False, "interact_by_id", f"Element ID {element_id} not found on page.")
 
         before_url = page.url
@@ -473,6 +633,8 @@ async def interact_by_id(element_id: int, action: str, text: str = "", press_ent
         # Get element text for logging
         el_text = await element.inner_text() if action == "click" else text
         print(f"[Browser] {action.upper()} element #{element_id}: '{el_text[:60]}'")
+        if capture_each:
+            await _capture_debug_artifacts(page, "before_interact_by_id", {"element_id": element_id, "action": action, "text": text})
             
         if action == "click":
             await element.click(force=True, timeout=5000)
@@ -501,6 +663,12 @@ async def interact_by_id(element_id: int, action: str, text: str = "", press_ent
                 after_value = await refreshed.input_value(timeout=1000)
         except Exception:
             after_value = ""
+        if capture_each:
+            await _capture_debug_artifacts(
+                page,
+                "after_interact_by_id",
+                {"element_id": element_id, "action": action, "text": text, "before_url": before_url, "after_url": after_url},
+            )
 
         return _format_response(
             True,
@@ -520,6 +688,11 @@ async def interact_by_id(element_id: int, action: str, text: str = "", press_ent
         )
             
     except Exception as e:
+        try:
+            page = await BrowserStateManager.get_page()
+            await _capture_debug_artifacts(page, "interact_by_id_failed", {"element_id": element_id, "action": action, "text": text, "error": str(e)})
+        except Exception:
+            pass
         return _format_response(False, "interact_by_id", f"Failed to execute '{action}' on element {element_id}", error=str(e))
 
 async def get_page_title() -> dict:
@@ -719,3 +892,220 @@ async def browser_search(query: str, open_visible: bool = False) -> str:
 def browser_search_sync(query: str, open_visible: bool = False) -> str:
     """Synchronous wrapper for browser_search."""
     return asyncio.run(browser_search(query, open_visible))
+
+
+async def observe_with_registry(
+    include_screenshot: bool = False,
+    include_ax_tree_text: bool = True,
+    max_elements: int = 120,
+) -> dict:
+    """
+    Unified observation using virtual registry and accessibility tree.
+    """
+    try:
+        page = await BrowserStateManager.get_page()
+        observation = await observe_page_state(
+            page=page,
+            include_screenshot=include_screenshot,
+            include_ax_tree_text=include_ax_tree_text,
+            max_elements=max_elements,
+        )
+        return _format_response(
+            True,
+            "observe_with_registry",
+            "Observed page state via virtual registry",
+            observation,
+        )
+    except Exception as e:
+        return _format_response(
+            False,
+            "observe_with_registry",
+            "Failed to observe page state with registry",
+            error=str(e),
+        )
+
+
+async def interact_by_registry_id(
+    element_id: str,
+    action: str,
+    text: str = "",
+    press_enter: bool = True,
+) -> dict:
+    """
+    Interact with an element using its registry ID (numeric index or stable hash ID).
+    """
+    try:
+        page = await BrowserStateManager.get_page()
+        registry = get_active_registry(page)
+        
+        # Try numeric index first
+        try:
+            if isinstance(element_id, int):
+                idx = element_id
+            else:
+                idx = int(element_id)
+            res = await registry.interact(idx, action, text, press_enter)
+        except (ValueError, TypeError):
+            # Try stable hash ID
+            entry = registry.get_by_id(element_id)
+            if not entry:
+                return _format_response(
+                    False,
+                    "interact_by_registry_id",
+                    f"Element registry ID '{element_id}' not found. Re-observe the page.",
+                )
+            res = await registry.interact(entry.index, action, text, press_enter)
+            
+        if res.get("success"):
+            return _format_response(
+                True,
+                "interact_by_registry_id",
+                f"Successfully executed '{action}' on element {element_id}",
+                res,
+            )
+        else:
+            return _format_response(
+                False,
+                "interact_by_registry_id",
+                res.get("error", "Interaction failed"),
+                error=res.get("error"),
+            )
+    except Exception as e:
+        return _format_response(
+            False,
+            "interact_by_registry_id",
+            f"Failed to interact with element {element_id}",
+            error=str(e),
+        )
+
+
+_MONTHS_FULL = ["january", "february", "march", "april", "may", "june",
+                "july", "august", "september", "october", "november", "december"]
+
+
+def _parse_date_arg(s: str):
+    """Parse '2026-06-18' | '18 June 2026' | 'June 18, 2026' | '18th June 2026'."""
+    if not s:
+        return None
+    t = s.strip().lower()
+    m = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', t)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    else:
+        m = re.search(r'\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})\s+(\d{4})', t)
+        if m:
+            d, mon_name, y = int(m.group(1)), m.group(2), int(m.group(3))
+        else:
+            m = re.search(r'\b([a-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})', t)
+            if not m:
+                return None
+            mon_name, d, y = m.group(1), int(m.group(2)), int(m.group(3))
+        mo = next((i + 1 for i, mn in enumerate(_MONTHS_FULL) if mn.startswith(mon_name[:3])), None)
+        if not mo:
+            return None
+    if not (1 <= mo <= 12 and 1 <= d <= 31):
+        return None
+    return {"day": d, "month_num": mo, "month": _MONTHS_FULL[mo - 1], "year": y}
+
+
+async def select_calendar_date(date_str: str, which: str = "departure") -> dict:
+    """Deterministically click the EXACT calendar cell for a date.
+
+    Removes date selection from the LLM's fuzzy element-id guessing (the source of
+    date hallucination). Matches day + month + year in the cell's accessible name,
+    pages forward through months if the target isn't visible yet, and never clicks a
+    nearby/guessed date.
+    """
+    t = _parse_date_arg(date_str)
+    if not t:
+        return _format_response(False, "select_calendar_date",
+                                f"Could not parse date '{date_str}'. Use e.g. '2026-06-18' or '18 June 2026'.",
+                                error="unparseable_date")
+    day, month, year = str(t["day"]), t["month"], str(t["year"])
+    mon3 = month[:3]
+    which = (which or "").strip().lower()
+    # Lookahead: name must contain the day (as a whole number), the month (full or
+    # 3-letter), and the year — in any order.
+    name_re = re.compile(rf"(?=.*\b{day}\b)(?=.*(?:{month}|{mon3}))(?=.*{year})", re.IGNORECASE)
+    roles = ["gridcell", "button", "option", "link", "cell"]
+    next_labels = ["Next", "Forward", "next month", "Next month", "forward one month", "Move forward"]
+
+    try:
+        page = await BrowserStateManager.get_page()
+    except Exception as e:
+        return _format_response(False, "select_calendar_date", "Browser not available", error=str(e))
+
+    for _attempt in range(14):  # up to ~13 months of forward paging
+        for role in roles:
+            try:
+                loc = page.get_by_role(role, name=name_re)
+                n = await loc.count()
+            except Exception:
+                continue
+            if n <= 0:
+                continue
+            target_loc = loc.first
+            if n > 1 and which:
+                for i in range(min(n, 12)):
+                    try:
+                        nm = (await loc.nth(i).get_attribute("aria-label")) or (await loc.nth(i).inner_text())
+                    except Exception:
+                        nm = ""
+                    if which in (nm or "").lower():
+                        target_loc = loc.nth(i)
+                        break
+            try:
+                await target_loc.scroll_into_view_if_needed(timeout=4000)
+                await target_loc.click(timeout=4000)
+                await page.wait_for_timeout(900)
+                print(f"[Calendar] Selected {which or 'date'} {day} {month} {year} via role={role}")
+                return _format_response(
+                    True, "select_calendar_date",
+                    f"Selected {which or ''} date {day} {month.title()} {year}".strip(),
+                    {"day": int(day), "month": month, "year": int(year), "which": which, "role": role},
+                )
+            except Exception:
+                continue
+        # Target not visible -> try to advance the calendar one month.
+        advanced = False
+        for label in next_labels:
+            try:
+                nb = page.get_by_role("button", name=re.compile(label, re.IGNORECASE))
+                if await nb.count() > 0:
+                    await nb.first.click(timeout=3000)
+                    await page.wait_for_timeout(600)
+                    advanced = True
+                    break
+            except Exception:
+                continue
+        if not advanced:
+            break
+
+    return _format_response(
+        False, "select_calendar_date",
+        f"Could not find {which or ''} date {day} {month.title()} {year} in the open calendar. "
+        "Make sure the date picker is open, then retry.".strip(),
+        error="date_cell_not_found",
+    )
+
+
+async def get_page_accessibility_tree() -> dict:
+    """
+    Convenience function to get the current page's pruned accessibility tree.
+    """
+    try:
+        page = await BrowserStateManager.get_page()
+        tree = await get_accessibility_tree(page)
+        return _format_response(
+            True,
+            "get_page_accessibility_tree",
+            "Extracted page accessibility tree",
+            {"tree": tree},
+        )
+    except Exception as e:
+        return _format_response(
+            False,
+            "get_page_accessibility_tree",
+            "Failed to extract accessibility tree",
+            error=str(e),
+        )

@@ -35,6 +35,7 @@ INDEX_PATH = Path(
 ALIASES = {
     "mom": ["mom", "maa", "mother", "mummy", "mumma", "mama"],
     "dad": ["dad", "papa", "father", "daddy", "baba"],
+    "myself": ["myself", "me", "my", "self", "rudraksh"],
 }
 
 
@@ -199,7 +200,35 @@ async def fetch_baileys_contacts(sync: bool = False) -> list[dict[str, Any]]:
             resp = await client.get(f"{CONNECTOR_URL}/contacts")
             resp.raise_for_status()
             data = resp.json()
-            return data.get("contacts", [])
+            contacts = data.get("contacts", [])
+
+            # Fetch connection state to get owner info (for "myself" alias)
+            try:
+                resp_conn = await client.get(f"{CONNECTOR_URL}/connection")
+                if resp_conn.status_code == 200:
+                    conn_data = resp_conn.json()
+                    user_info = conn_data.get("user")
+                    if user_info and user_info.get("id"):
+                        raw_id = user_info["id"]
+                        # Strip replica suffix if present (e.g. 917683031290:28@s.whatsapp.net -> 917683031290@s.whatsapp.net)
+                        owner_jid = re.sub(r":\d+@", "@", raw_id)
+                        owner_name = user_info.get("name") or "Rudraksh"
+                        owner_contact = {
+                            "id": owner_jid,
+                            "jid": owner_jid,
+                            "chat_id": owner_jid,
+                            "name": owner_name,
+                            "displayName": owner_name,
+                            "pushName": owner_name,
+                            "short": owner_name,
+                        }
+                        # Append the owner contact to the list
+                        contacts = [owner_contact] + contacts
+                        print(f"[CONTACT RESOLVER] Dynamically added owner info for '{owner_name}' ({owner_jid})")
+            except Exception as conn_exc:
+                print(f"[CONTACT RESOLVER] Failed to fetch owner info: {conn_exc}")
+
+            return contacts
     except Exception as exc:
         print(f"[CONTACT RESOLVER] Contact fetch failed: {exc}")
         return []

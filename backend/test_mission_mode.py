@@ -2,6 +2,18 @@ import asyncio
 import importlib
 import sys
 import types
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def clean_sys_modules():
+    # backup sys.modules
+    old_modules = sys.modules.copy()
+    yield
+    # restore sys.modules
+    sys.modules.clear()
+    sys.modules.update(old_modules)
+
 
 
 class _FakeTool:

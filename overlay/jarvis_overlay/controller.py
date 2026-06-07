@@ -1,8 +1,12 @@
 """Top-level state controller for the native overlay."""
 from __future__ import annotations
 
-from PyQt6.QtCore import QThread, QObject
-from PyQt6.QtGui import QGuiApplication
+import os
+import sys
+
+from PyQt6.QtCore import QThread, QObject, QTimer
+from PyQt6.QtGui import QCursor, QGuiApplication
+from PyQt6.QtWidgets import QApplication
 
 try:
     from PyQt6.QtTextToSpeech import QTextToSpeech
@@ -10,15 +14,18 @@ except ImportError:
     QTextToSpeech = None
 
 from .actions import get_action
-from .api_client import OverlayAskWorker, OverlayFollowUpWorker, OverlayOcrWorker
+from .api_client import OverlayAskWorker, OverlayChatWorker, OverlayFollowUpWorker, OverlayOcrWorker
 from .app_context import get_active_app_context
-from .capture import capture_region
+from .capture import capture_region, screen_for_point
 from .config import CONFIG, OverlayConfig
 from .context_store import OverlayContextStore
 from .hotkeys import GlobalHotkeyListener
 from .state import OverlayState, RegionCapture
+from . import autostart
 from .ui.action_palette import ActionPalette
 from .ui.cursor_companion import CursorCompanion
+from .ui.jarvis_orb import JarvisOrb
+from .ui.tray import TrayPresence
 from .ui.input_popup import AskPopup
 from .ui.pinned_note import PinnedNote
 from .ui.response_bubble import ResponseBubble
@@ -31,9 +38,28 @@ class OverlayController(QObject):
         self._config = config
         self._state = OverlayState.IDLE
         self._hotkeys = GlobalHotkeyListener()
-        self._hotkeys.activated.connect(self.activate_selection)
+        self._hotkeys.activated.connect(self._on_hotkey)
         self._selection_windows: list[SelectionOverlay] = []
         self._cursor_hud = CursorCompanion()
+        self._orb = JarvisOrb()
+        self._orb.expand_requested.connect(self._on_orb_expand)
+        self._orb.dismissed.connect(self.cancel)
+        self._win_hotkey = None  # set in start() on Windows
+
+        # Tray presence (best-effort; failure must not stop the overlay).
+        self._tray = None
+        try:
+            self._tray = TrayPresence(
+                follow_on=os.getenv("JARVIS_ORB_FOLLOW", "1").strip().lower() not in {"0", "false", "no", "off"},
+                autostart_on=autostart.is_enabled(),
+            )
+            self._tray.show_requested.connect(self.summon)
+            self._tray.capture_requested.connect(self.activate_selection)
+            self._tray.follow_toggled.connect(self._orb.set_follow)
+            self._tray.autostart_toggled.connect(autostart.set_enabled)
+            self._tray.quit_requested.connect(self._quit)
+        except Exception as exc:  # tray unavailable (no system tray, etc.)
+            print(f"[Overlay] Tray unavailable: {exc}")
         self._action_palette = ActionPalette()
         self._action_palette.action_selected.connect(self.submit_quick_action)
         self._action_palette.ask_selected.connect(self._open_question_input)
@@ -43,7 +69,10 @@ class OverlayController(QObject):
         self._connect_ask_handler(self.submit_question)
         self._ask_popup.cancelled.connect(self.cancel)
         self._response_bubble = ResponseBubble()
-        self._response_bubble.follow_up_submitted.connect(self.submit_followup)
+        self._response_bubble.follow_up_submitted.connect(self._on_followup)
+        self._response_bubble.capture_requested.connect(self.activate_selection)
+        self._chat_mode = False           # True = direct /chat conversation (no capture)
+        self._chat_turns: list[dict] = []  # in-memory transcript for chat mode
         self._response_bubble.pin_requested.connect(self._pin_response)
         self._response_bubble.speak_requested.connect(self._speak)
         self._tts = QTextToSpeech(self) if QTextToSpeech else None
@@ -57,15 +86,166 @@ class OverlayController(QObject):
         self._active_session_id = "overlay"
 
     def start(self) -> None:
+        # Prefer the OS-level Win32 hotkey on Windows; fall back to pynput if it
+        # can't register (then we won't double-fire).
+        if sys.platform == "win32":
+            try:
+                from .win_hotkey import Win32HotkeyListener
+
+                self._win_hotkey = Win32HotkeyListener()
+                self._win_hotkey.activated.connect(self._on_hotkey)
+                self._win_hotkey.start()
+                QTimer.singleShot(500, self._ensure_hotkey_fallback)
+                return
+            except Exception as exc:
+                print(f"[Overlay] Win32 hotkey unavailable ({exc}); using pynput.")
         self._hotkeys.start()
 
+    def _ensure_hotkey_fallback(self) -> None:
+        if not getattr(self._win_hotkey, "available", False):
+            print("[Overlay] Win32 RegisterHotKey failed; falling back to pynput listener.")
+            self._hotkeys.start()
+
     def stop(self) -> None:
+        if self._win_hotkey is not None:
+            self._win_hotkey.stop()
         self._hotkeys.stop()
+        self._orb.dismiss()
         self.cancel()
+
+    def summon(self) -> None:
+        """Bring the assistant up (tray click / second-launch / external trigger)."""
+        if self._orb.isVisible():
+            self._orb.raise_()
+            return
+        if self._state in {OverlayState.IDLE, OverlayState.SHOWING_RESPONSE}:
+            self._response_bubble.hide()
+            self._orb.appear(QCursor.pos())
+
+    def _quit(self) -> None:
+        self.stop()
+        if self._tray is not None:
+            self._tray.hide()
+        QApplication.quit()
+
+    # ── Ambient orb entry point (Phase 1) ────────────────────
+    def _ambient_enabled(self) -> bool:
+        """Ambient orb is the default hotkey behavior. Set JARVIS_AMBIENT_ORB=0
+        to revert to the classic 'hotkey opens selection lens directly' flow."""
+        return os.getenv("JARVIS_AMBIENT_ORB", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+    def _on_hotkey(self) -> None:
+        if not self._ambient_enabled():
+            self.activate_selection()
+            return
+        # Toggle: if the orb is already up, the hotkey dismisses it.
+        if self._orb.isVisible():
+            self._orb.dismiss()
+            return
+        if self._state not in {OverlayState.IDLE, OverlayState.SHOWING_RESPONSE}:
+            return
+        self._response_bubble.hide()
+        self._orb.appear(QCursor.pos())
+
+    def _on_orb_expand(self, seed: str) -> None:
+        # Phase 3: the orb opens a direct conversation (no screen capture needed).
+        # The screen-context "Lens" lives on the tray ("Ask about screen…").
+        self._orb.dismiss()
+        self._enter_chat_mode(seed)
+
+    def _enter_chat_mode(self, seed: str = "") -> None:
+        self._chat_mode = True
+        self._chat_turns = []
+        self._active_session_id = "default"
+        self._capture = None
+        self._state = OverlayState.AWAITING_QUESTION
+        self._connect_ask_handler(self.submit_chat)
+        self._ask_popup.open_at(QCursor.pos(), seed=seed)
+
+    def _is_vision_request(self, text: str) -> bool:
+        t = text.lower()
+        keywords = [
+            "analyze my screen", "analyse my screen", "look at my screen", "look at this",
+            "my screen", "this screen", "the screen", "on screen", "read my screen",
+            "scan my screen", "what's on", "what is on", "screenshot", "screen shot",
+            "this graph", "the graph", "this chart", "the chart", "can you see",
+            "do you see", "what do you see", "see the", "see this", "describe this",
+            "describe my screen", "look here", "watch my screen",
+        ]
+        return any(k in t for k in keywords)
+
+    def _submit_screen_vision(self, question: str) -> None:
+        """Capture the screen from the overlay (hiding J.A.R.V.I.S first so it isn't in
+        the shot), then send the clean screenshot to the vision endpoint."""
+        self._pending_question = question
+        self._active_app_context = get_active_app_context()
+        # Hide every overlay surface so the screenshot shows the user's actual screen.
+        self._ask_popup.hide()
+        self._orb.dismiss()
+        self._response_bubble.hide()
+        self._cursor_hud.stop()
+        QApplication.processEvents()
+        # Let the compositor drop the windows a frame or two before grabbing.
+        QTimer.singleShot(220, lambda q=question: self._capture_and_ask_vision(q))
+
+    def _capture_and_ask_vision(self, question: str) -> None:
+        pos = QCursor.pos()
+        screen = screen_for_point(pos)
+        try:
+            self._capture = capture_region(screen, screen.geometry(), pos)
+        except Exception as exc:
+            self._state = OverlayState.SHOWING_RESPONSE
+            self._response_bubble.show_error(f"Screen capture failed: {exc}")
+            self._response_bubble.show()
+            return
+        self._chat_mode = False  # follow-ups continue against the captured screen context
+        self._active_session_id = "overlay"
+        self._context_store.begin_session(self._capture, self._active_app_context)
+        self._state = OverlayState.SENDING
+        self._response_bubble.show_loading(pos)
+        worker = OverlayAskWorker(
+            self._config, self._capture, question,
+            self._context_store.current_metadata, session_id="overlay",
+        )
+        self._start_worker(worker, self._on_response, self._on_error)
+
+    def submit_chat(self, question: str) -> None:
+        question = question.strip()
+        if not question:
+            return
+        if self._is_vision_request(question):
+            self._submit_screen_vision(question)
+            return
+        self._chat_mode = True
+        self._active_session_id = "default"
+        self._state = OverlayState.SENDING
+        self._ask_popup.hide()
+        self._cursor_hud.stop()
+        if self._chat_turns:
+            self._response_bubble.show_followup_loading(question)
+        else:
+            self._response_bubble.show_loading(QCursor.pos())
+        self._pending_question = question
+        worker = OverlayChatWorker(self._config, question, session_id=self._active_session_id)
+        self._start_worker(worker, self._on_chat_response, self._on_error)
+
+    def _on_chat_response(self, payload: dict) -> None:
+        self._state = OverlayState.SHOWING_RESPONSE
+        reply = str(payload.get("reply") or "No response received.")
+        self._chat_turns.append({"question": self._pending_question, "reply": reply})
+        self._response_bubble.show_conversation(self._chat_turns, None)
+
+    def _on_followup(self, question: str) -> None:
+        # Route follow-ups to the active mode: direct chat vs screen-capture lens.
+        if self._chat_mode:
+            self.submit_chat(question)
+        else:
+            self.submit_followup(question)
 
     def activate_selection(self) -> None:
         if self._state not in {OverlayState.IDLE, OverlayState.SHOWING_RESPONSE}:
             return
+        self._chat_mode = False  # screen-capture lens flow; follow-ups use context
         self._state = OverlayState.SELECTING
         self._response_bubble.hide()
         self._active_app_context = get_active_app_context()

@@ -2,6 +2,18 @@ import asyncio
 import importlib
 import sys
 import types
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def clean_sys_modules():
+    # backup sys.modules
+    old_modules = sys.modules.copy()
+    yield
+    # restore sys.modules
+    sys.modules.clear()
+    sys.modules.update(old_modules)
+
 
 
 class _Message:
@@ -52,7 +64,8 @@ def _install_import_fakes(fake_graph):
     )
 
 
-def test_complex_query_routes_to_langgraph_without_missing_history():
+def test_complex_query_routes_to_langgraph_without_missing_history(monkeypatch):
+    monkeypatch.setenv("JARVIS_CLARIFY", "false")
     fake_graph = _FakeGraph()
     _install_import_fakes(fake_graph)
     llm_service = importlib.reload(importlib.import_module("services.llm_service"))

@@ -84,9 +84,22 @@ async def ask_about_overlay_region(
         source="overlay",
     )
 
-    from services.llm_service import generate_response
-    print(f"[OVERLAY ASK ROUTING] Routing initial crop capture to generate_response: '{clean_question}'")
-    reply = await generate_response(clean_question, session_id=session_id)
+    # Send the FRESHLY captured image straight to the vision model. Previously this
+    # called generate_response(session_id="overlay"), which looks up the *last stored*
+    # overlay image — but the context for THIS capture is only created below, so a fresh
+    # capture had no image and the model replied "I can't see your screen." Passing the
+    # just-captured image directly fixes that.
+    from services.llm_service import _call_maverick_vision_chat
+    contextual_question = _build_contextual_prompt(clean_question, metadata)
+    print(f"[OVERLAY ASK ROUTING] Direct vision on freshly captured image: '{clean_question}'")
+    # Must pass a non-empty history: the vision function attaches the image to the FIRST
+    # user message. An empty list -> zero messages -> Bedrock "conversation must start
+    # with a user message" ValidationException.
+    vision_history = [{"role": "user", "content": contextual_question}]
+    reply = await _call_maverick_vision_chat(vision_history, contextual_question, normalized["image_base64"])
+    if not reply or not reply.strip():
+        from services.llm_service import generate_response
+        reply = await generate_response(clean_question, session_id=session_id)
 
     elapsed_ms = round((time.perf_counter() - started) * 1000)
 

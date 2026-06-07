@@ -5,14 +5,15 @@ Wraps browser, whatsapp, file system, and weather tools into LangChain @tool dec
 
 import hashlib
 import json
+import os
 import time
 
 from langchain_core.tools import tool
 from tools.browser_tool import (
-    open_url, get_current_url, get_page_title, 
-    extract_visible_text, wait_for_navigation,
-    inject_element_markers, interact_by_id, scroll_page, go_back,
-    take_screenshot
+    open_url, get_current_url, get_page_title,
+    extract_visible_text, scroll_page, go_back,
+    take_screenshot, observe_with_registry, interact_by_registry_id,
+    select_calendar_date,
 )
 from tools.whatsapp_tool import (
     whatsapp_briefing as _wa_briefing,
@@ -28,11 +29,6 @@ from tools.file_system_tool import (
 )
 from tools.weather_tool import get_weather as _get_weather
 
-
-# ═══════════════════════════════════════════════════════════
-# BROWSER TOOLS
-# ═══════════════════════════════════════════════════════════
-
 @tool
 async def browser_open_url(url: str) -> dict:
     """
@@ -43,16 +39,35 @@ async def browser_open_url(url: str) -> dict:
     return await open_url(url)
 
 @tool
-async def browser_interact(element_id: int, action: str, text: str = "", press_enter: bool = True) -> dict:
+async def browser_interact(element_id: str, action: str, text: str = "", press_enter: bool = True) -> dict:
     """
-    Interact with a specific UI element using its numerical ID from browser_observe.
+    Interact with a specific UI element using its numerical ID or registry ID from browser_observe.
     Actions: 'click', 'type'.
     If action is 'type', provide the 'text' argument.
     Set press_enter=False to prevent pressing Enter after typing (useful for login forms, address fields).
     By default, press_enter=True which submits search queries automatically.
     Use this to click buttons, follow links, or fill forms flawlessly.
     """
-    return await interact_by_id(element_id, action, text, press_enter)
+    # Models (especially Llama) frequently send booleans as strings, e.g.
+    # press_enter="false". A non-empty string is truthy in Python, which would
+    # wrongly submit Enter into an autocomplete field. Coerce defensively.
+    if isinstance(press_enter, str):
+        press_enter = press_enter.strip().lower() not in {"false", "0", "no", "off", "none", ""}
+    return await interact_by_registry_id(element_id, action, text, press_enter)
+
+@tool
+async def browser_select_date(date: str, which: str = "departure") -> dict:
+    """
+    Select a date in a calendar / date-picker DETERMINISTICALLY. ALWAYS use this for
+    choosing flight/hotel dates instead of clicking calendar cells with browser_interact
+    (which mis-picks dates). The date picker must be open first (click the date field).
+    Args:
+      date: the target date, e.g. "2026-06-18" or "18 June 2026".
+      which: "departure" or "return" (helps disambiguate when both are on screen).
+    It finds the exact day+month+year cell, pages forward through months if needed,
+    and refuses to click a wrong/nearby date.
+    """
+    return await select_calendar_date(date, which)
 
 @tool
 async def browser_scroll(direction: str = "down") -> dict:
@@ -70,88 +85,15 @@ async def browser_observe() -> dict:
     and a base64 screenshot of the current viewport for visual verification.
     You MUST use the returned element IDs with browser_interact to click or type.
     """
-    url_res = await get_current_url()
-    title_res = await get_page_title()
-    text_res = await extract_visible_text()
-    markers_res = await inject_element_markers()
-    screenshot_res = await take_screenshot()
-    
-    visible_text = (text_res.get("data") or {}).get("text", "") if text_res else ""
-    compressed_text = visible_text[:500] + ("..." if len(visible_text) > 500 else "")
-    
-    elements_list = (markers_res.get("data") or {}).get("elements", [])
-    inputs = [e for e in elements_list if e.get("tag") == "input"]
-    buttons = [e for e in elements_list if e.get("tag") == "button"]
-    links = [e for e in elements_list if e.get("tag") == "a"]
-    print(f"[Observation] {len(elements_list)} elements: {len(inputs)} inputs, {len(buttons)} buttons, {len(links)} links")
-    
-    # ── Observation Payload Optimization ──
-    # Prioritize actionable elements, cap low-value links
-    optimized_elements = []
-    link_count = 0
-    for el in elements_list:
-        tag = el.get("tag", "")
-        if tag == "a":
-            # Keep links with product context (they're relevant) but cap bare nav links
-            if el.get("context") or link_count < 15:
-                link_count += 1
-            else:
-                continue  # Skip excess bare navigation links
-        # Strip bbox to save ~30 chars per element
-        el.pop("bbox", None)
-        optimized_elements.append(el)
-    
-    if len(optimized_elements) < len(elements_list):
-        print(f"[Observation] Optimized: {len(elements_list)} -> {len(optimized_elements)} elements (stripped bbox, capped links)")
-
-    # Include screenshot if captured successfully
-    screenshot_b64 = None
-    if screenshot_res.get("success") and isinstance(screenshot_res.get("data"), dict):
-        screenshot_b64 = screenshot_res["data"].get("image_base64")
-
-    url = (url_res.get("data") or {}).get("url", "")
-    title = (title_res.get("data") or {}).get("title", "")
-    fingerprint_basis = {
-        "url": url,
-        "title": title,
-        "summary": compressed_text[:500],
-        "elements": [
-            {
-                "id": item.get("id"),
-                "tag": item.get("tag"),
-                "role": item.get("role"),
-                "text": item.get("text"),
-                "context": item.get("context"),
-            }
-            for item in optimized_elements[:80]
-            if isinstance(item, dict)
-        ],
-    }
-    page_fingerprint = hashlib.sha256(
-        json.dumps(fingerprint_basis, sort_keys=True, ensure_ascii=True).encode("utf-8")
-    ).hexdigest()[:16]
-    observation_id = hashlib.sha256(f"{page_fingerprint}:{time.time()}".encode("utf-8")).hexdigest()[:12]
-    
-    return {
-        "success": True,
-        "action": "browser_observe",
-        "observation": "Extracted structured page data, interactive element IDs, and viewport screenshot",
-        "data": {
-            "observation_id": observation_id,
-            "page_fingerprint": page_fingerprint,
-            "url": url,
-            "title": title,
-            "summary": compressed_text,
-            "element_counts": {
-                "total": len(optimized_elements),
-                "inputs": len(inputs),
-                "buttons": len(buttons),
-                "links": len(links),
-            },
-            "interactive_elements": optimized_elements,
-            "screenshot_base64": screenshot_b64
-        }
-    }
+    include_screenshot = os.getenv("BROWSER_OBSERVE_SCREENSHOTS", "false").lower() in {"1", "true", "yes", "on"}
+    res = await observe_with_registry(
+        include_screenshot=include_screenshot,
+        include_ax_tree_text=True,
+    )
+    if res.get("success") and isinstance(res.get("data"), dict):
+        res["action"] = "browser_observe"
+        res["observation"] = "Extracted structured page data, interactive element IDs, and viewport screenshot"
+    return res
 
 @tool
 async def browser_get_status() -> dict:
@@ -184,9 +126,21 @@ async def browser_search(query: str) -> str:
     Search the internet for any topic, query, or product information.
     Returns the search results as a formatted text summary.
     This does NOT open a browser window and is extremely fast and reliable.
+
+    IMPORTANT: results are page TITLES and snippets from a search engine, NOT live
+    data. They often contain marketing/SEO phrases (e.g. "$49 Flights..."). NEVER
+    quote a specific price, fare, score, or fact as confirmed from these results.
+    To report a real price/value you MUST open the site with browser_open_url and
+    read it with browser_observe.
     """
     from tools.browser_tool import browser_search as _search
-    return await _search(query, open_visible=False)
+    result = await _search(query, open_visible=False)
+    guard = (
+        "\n\n[UNVERIFIED] The above are search-engine titles/snippets, not confirmed "
+        "live values. Do not state any price/number from these as fact. Open the "
+        "relevant site (browser_open_url) and browser_observe to confirm before answering."
+    )
+    return f"{result}{guard}"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -279,6 +233,7 @@ def weather_check(location: str = "") -> str:
 BROWSER_TOOLS = [
     browser_open_url,
     browser_interact,
+    browser_select_date,
     browser_scroll,
     browser_observe,
     browser_get_status,

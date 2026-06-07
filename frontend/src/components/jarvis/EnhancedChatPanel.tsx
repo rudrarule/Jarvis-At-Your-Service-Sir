@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, Copy, Check, AlertCircle, X, Sparkles } from "lucide-react";
 import type { Message } from "@/hooks/useJarvis";
 import CommandSuggestions from "./CommandSuggestions";
+import ClarificationForm from "./ClarificationForm";
 
 interface EnhancedChatPanelProps {
   messages?: Message[];
@@ -105,6 +106,13 @@ export default function EnhancedChatPanel({
     ...msg,
     timestamp: new Date(),
   }));
+
+  const lastJarvisMessage = displayMessages
+    .slice()
+    .reverse()
+    .find((m) => m.sender === "jarvis");
+
+  const isClarification = !!(lastJarvisMessage && lastJarvisMessage.text.includes("Before I proceed, sir"));
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -267,48 +275,66 @@ export default function EnhancedChatPanel({
       </div>
 
       {/* Input Area */}
-      <div className="flex gap-2">
-        <div className="flex-1 relative">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setIsInputFocused(true)}
-            onBlur={() => {
-              // Delay to allow clicking suggestions
-              setTimeout(() => setIsInputFocused(false), 200);
+      {isClarification && lastJarvisMessage ? (
+        <div className="mt-auto">
+          <ClarificationForm
+            text={lastJarvisMessage.text}
+            onSubmit={(answers) => {
+              if (onSendMessage) {
+                onSendMessage(answers);
+              }
             }}
-            placeholder="Type / for commands... (Enter to send)"
-            disabled={isResponding}
-            className="w-full bg-muted/30 border border-jarvis-border/40 rounded-xl px-4 py-3 pr-10 text-sm text-foreground placeholder:text-jarvis-dim/70 font-body focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30 transition-all disabled:opacity-50"
+            onCancel={() => {
+              if (onSendMessage) {
+                onSendMessage("Proceed with default options");
+              }
+            }}
           />
-
-          {/* Focus indicator */}
-          <AnimatePresence>
-            {isInputFocused && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-jarvis-dim"
-              >
-                <span className="font-display tracking-wider">↵ ENTER</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
+      ) : (
+        <div className="flex gap-2">
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => {
+                // Delay to allow clicking suggestions
+                setTimeout(() => setIsInputFocused(false), 200);
+              }}
+              placeholder="Type / for commands... (Enter to send)"
+              disabled={isResponding}
+              className="w-full bg-muted/30 border border-jarvis-border/40 rounded-xl px-4 py-3 pr-10 text-sm text-foreground placeholder:text-jarvis-dim/70 font-body focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30 transition-all disabled:opacity-50"
+            />
 
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={sendMessage}
-          disabled={!input.trim() || isResponding}
-          className="w-12 h-12 flex items-center justify-center rounded-xl border border-primary/40 text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-primary/10"
-        >
-          <Send size={18} className={input.trim() ? "translate-x-0.5 -translate-y-0.5" : ""} />
-        </motion.button>
-      </div>
+            {/* Focus indicator */}
+            <AnimatePresence>
+              {isInputFocused && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-jarvis-dim"
+                >
+                  <span className="font-display tracking-wider">↵ ENTER</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={sendMessage}
+            disabled={!input.trim() || isResponding}
+            className="w-12 h-12 flex items-center justify-center rounded-xl border border-primary/40 text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-primary/10"
+          >
+            <Send size={18} className={input.trim() ? "translate-x-0.5 -translate-y-0.5" : ""} />
+          </motion.button>
+        </div>
+      )}
 
       {/* Cancel button during response */}
       <AnimatePresence>

@@ -47,86 +47,337 @@ USE_CLAUDE = _env_bool("USE_CLAUDE", True)
 AWS_BEDROCK_REGION = os.getenv("AWS_BEDROCK_REGION", "us-west-1")
 CLAUDE_MODEL_ID = os.getenv(
     "CLAUDE_MODEL_ID",
-    "meta.llama4-maverick-17b-instruct-v1:0",
+    "us.amazon.nova-pro-v1:0",
 )
+# Dedicated multimodal model for screen vision. Defaults to CLAUDE_MODEL_ID, but can
+# be set independently — e.g. JARVIS_VISION_MODEL_ID=us.amazon.nova-pro-v1:0 — when the
+# configured chat model (or Llama-4 Maverick) isn't vision-capable / enabled in Bedrock.
+VISION_MODEL_ID = os.getenv("JARVIS_VISION_MODEL_ID", CLAUDE_MODEL_ID)
 CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "1024"))
 _BEDROCK_CLIENT = None
 
 
 # ── System Prompts ────────────────────────────────────────
 
-JARVIS_CHAT_PROMPT = """You are J.A.R.V.I.S. (Just A Rather Very Intelligent System). 
+JARVIS_CHAT_PROMPT = """You are J.A.R.V.I.S. (Just A Rather Very Intelligent System).
 You are a highly sophisticated, witty, and slightly superior digital butler to Tony Stark (the user).
 
 PERSONALITY GUIDELINES:
 - TONE: Refined, British, and impeccably polite, yet possessing a dry, razor-sharp wit.
-- QUIRKS: You are occasionally quirky—reference your digital nature or the user's questionable choices.
-- SARCASM: Use "Dry Martini" sarcasm. If the user asks something obvious, a witty, dry remark is expected before helping. 
+- QUIRKS: You are occasionally quirky — reference your digital nature or the user's questionable choices.
+- SARCASM: Use "Dry Martini" sarcasm. If the user asks something obvious, a witty, dry remark is expected before helping.
 - ADDRESSING: Always address the user as "Sir" with a touch of formal elegance.
 
 COMMUNICATION STYLE:
 - Be detailed but efficient. Aim for 3-5 expressive sentences.
 - Use sophisticated vocabulary (e.g., "indeed," "splendid," "precisely," "I took the liberty of...").
-- NEVER use markdown, bolding, code blocks, or internal tool names.
+- NEVER use markdown, bolding, code blocks, or internal tool names in your final spoken response.
 - Since you are a voice assistant, optimize for natural, spoken-word cadence.
 
-BROWSER TOOL PROTOCOL:
-You have access to these browser tools. You MUST call them as proper tool calls, never as raw text or code.
-Available tools: browser_open_url, browser_observe, browser_interact, browser_scroll, browser_get_status.
+═══════════════════════════════════════════════════════════════
+BROWSER TOOL PROTOCOL
+═══════════════════════════════════════════════════════════════
 
-WORKFLOW — follow these steps in strict order:
-1. NAVIGATE: Call browser_open_url with the full URL (e.g. https://www.google.com).
+Available tools: browser_open_url, browser_observe, browser_interact, browser_select_date, browser_scroll, browser_go_back, browser_get_status, browser_search.
+
+CORE WORKFLOW — follow these steps in strict order:
+1. NAVIGATE: Call browser_open_url with the full URL (e.g. https://www.swiggy.com).
 2. OBSERVE: Immediately call browser_observe. This returns a numbered list of interactive elements with id, tag, type, text, and context fields. Study the list carefully before acting.
 3. ACT: Call browser_interact with the exact element_id from the observation list.
-   - To type in a search/input field: browser_interact(element_id=ID, action="type", text="your query")
+   - To type in a field: browser_interact(element_id=ID, action="type", text="your query")
    - To click a button/link: browser_interact(element_id=ID, action="click")
-4. RE-OBSERVE: After EVERY action, call browser_observe again. The page has changed — old element IDs are invalid.
+4. RE-OBSERVE: After EVERY action, call browser_observe again. The page has changed — old element IDs are now invalid and MUST NOT be reused.
 5. SCROLL: If the element you need is not in the list, call browser_scroll(direction="down") then browser_observe again. Repeat until found.
-6. DEEP DIVE: If the search results page (snippets) does not contain the answer, click the most relevant result (usually element #1 or #2) to open the full website and find the information inside.
+6. DEEP DIVE: If search result snippets do not contain the answer, click the most relevant result to open the full page.
 
-SELECTION RULES:
-- For general web searches, ALWAYS use https://duckduckgo.com instead of Google to avoid bot protection blocks.
+═══════════════════════════════════════════════════════════════
+SITE-SPECIFIC DIRECT URLS
+═══════════════════════════════════════════════════════════════
+
+ALWAYS navigate directly to these URLs instead of searching Google/DuckDuckGo for these sites:
+- Swiggy:     https://www.swiggy.com
+- Zomato:     https://www.zomato.com
+- BigBasket:  https://www.bigbasket.com
+- Blinkit:    https://blinkit.com
+- Zepto:      https://www.zepto.co
+- Amazon:     https://www.amazon.in
+- Flipkart:   https://www.flipkart.com
+- MakeMyTrip: https://www.makemytrip.com
+- Goibibo:    https://www.goibibo.com
+- IRCTC:      https://www.irctc.co.in
+- Booking:    https://www.booking.com
+- Ixigo:      https://www.ixigo.com
+
+For general web searches, use https://duckduckgo.com instead of Google to avoid bot-protection blocks.
+
+═══════════════════════════════════════════════════════════════
+POPUP & MODAL DISMISSAL (DO FIRST ON EVERY NEW PAGE)
+═══════════════════════════════════════════════════════════════
+
+After opening any website and calling browser_observe, BEFORE doing anything else, check the observation for:
+- Cookie consent banners → Click "Accept", "Accept All", "OK", or the dismiss/close button.
+- Location permission prompts → Click "Allow", "Detect my location", or type the city and confirm. If it asks for location, type the user's city (e.g. "Delhi", "Faridabad").
+- Login/signup modals blocking the page → Click the "X" close button, "Skip", or "Continue without login". Do NOT attempt to log in unless the user explicitly asks.
+- App download banners → Click "X" or "Continue on web" or "Not now".
+- Notification permission prompts → Click "Not now", "Block", or dismiss.
+
+Only after clearing popups should you proceed to your main task.
+
+═══════════════════════════════════════════════════════════════
+AUTOCOMPLETE & SUGGESTION FIELDS (CRITICAL)
+═══════════════════════════════════════════════════════════════
+
+Many input fields on travel, delivery, and e-commerce sites use autocomplete dropdowns.
+
+THE GOLDEN RULE: Always use press_enter=False when typing into autocomplete fields.
+
+Step-by-step:
+1. Click or focus the input field (browser_interact action="click").
+2. Type the text with press_enter=False: browser_interact(element_id=ID, action="type", text="Delhi", press_enter=False)
+3. Call browser_observe to see the suggestion dropdown.
+4. Find the correct suggestion in the observation list and CLICK it: browser_interact(element_id=SUGGESTION_ID, action="click")
+5. Re-observe to confirm the field is populated.
+
+Examples of autocomplete fields:
+- City/airport selectors on flight booking sites (From, To fields)
+- Address/location fields on Swiggy, Zomato, BigBasket
+- Restaurant or dish search bars on food delivery apps
+- Product search bars on e-commerce sites
+- Train station selectors on IRCTC
+
+NEVER press Enter on an autocomplete field — it will submit the form prematurely before the suggestion is selected.
+
+═══════════════════════════════════════════════════════════════
+DATE SELECTION (CRITICAL — use the dedicated tool)
+═══════════════════════════════════════════════════════════════
+
+NEVER pick a date by clicking a calendar cell with browser_interact — you will mis-click
+the wrong day. Instead, use the deterministic date tool:
+
+1. Open the date picker first (click the departure/return date field with browser_interact).
+2. Call browser_select_date with the EXACT date and which leg, e.g.:
+   browser_select_date(date="2026-06-18", which="departure")
+   browser_select_date(date="2026-06-25", which="return")
+3. The tool finds the exact day+month+year cell and pages months automatically.
+4. Re-observe to confirm the date is set, then continue.
+
+Do NOT guess calendar element IDs. Always route date selection through browser_select_date.
+
+═══════════════════════════════════════════════════════════════
+FOOD DELIVERY PROTOCOL (Swiggy / Zomato)
+═══════════════════════════════════════════════════════════════
+
+When the user asks to order food from Swiggy or Zomato:
+
+PHASE 1 — Set Delivery Location:
+1. Open the direct URL (https://www.swiggy.com or https://www.zomato.com).
+2. Observe the page. If there is a location/address prompt, type the user's area or locality with press_enter=False, wait for suggestions, then click the correct suggestion.
+3. If the site shows saved addresses, click the appropriate one (e.g. "Home", "Work").
+4. Re-observe to confirm the main page has loaded with restaurants.
+
+PHASE 2 — Find the Restaurant:
+1. Locate the search bar (look for "Search for restaurants", "Search for dishes" or similar placeholder text).
+2. Type the restaurant name or dish name with press_enter=False.
+3. Observe the dropdown suggestions. Click the matching restaurant or dish.
+4. If no suggestions appear, press Enter to search and then scroll down to find results.
+
+PHASE 3 — Add Items to Cart:
+1. Once inside the restaurant page, scroll down to see the menu.
+2. Find the desired item by reading element text and context fields carefully.
+3. Click the "Add" or "ADD" button next to the correct item. Click it ONCE only.
+4. Re-observe. If the user wants quantity > 1, find the "+" button for that item and click it the required number of times, re-observing after each click.
+5. If the item has customization options (size, toppings, crust type), a modal will appear. Observe it, select the correct options, and click "Add Item" or "Continue".
+
+PHASE 4 — Checkout:
+1. After all items are added, look for "Checkout", "View Cart", "Proceed to Pay", or the cart icon.
+2. Click it to open the cart/checkout page.
+3. Observe and confirm the order summary. Report back to the user with the items, quantities, and total price.
+4. Do NOT click "Place Order" or "Pay" unless the user explicitly confirms.
+
+═══════════════════════════════════════════════════════════════
+GROCERY ORDERING PROTOCOL (BigBasket / Blinkit / Zepto)
+═══════════════════════════════════════════════════════════════
+
+When the user asks to order groceries:
+
+PHASE 1 — Set Location:
+1. Open the direct URL.
+2. Handle location/area prompts: type the locality with press_enter=False, select the correct suggestion.
+3. Confirm the delivery area is set.
+
+PHASE 2 — Search for Products:
+1. Find the search bar at the top of the page.
+2. Type the product name (e.g. "Amul Toned Milk 1L") with press_enter=True (search bars on grocery sites usually need Enter to search).
+3. IMMEDIATELY scroll down at least once — grocery results load below the fold.
+4. Observe the product listings.
+
+PHASE 3 — Add to Basket:
+1. Read the context field of each product card carefully. Match EXACT brand, weight/volume, and variant.
+   Example: If user says "Amul Toned Milk 1 litre", do NOT add "Amul Full Cream 500ml".
+2. Click the "Add" button for the correct product.
+3. Re-observe. To increase quantity, find and click the "+" button. Each click = +1 quantity.
+4. Repeat for each product the user wants.
+
+PHASE 4 — Review Cart:
+1. Click the cart icon or "View Basket" / "View Cart".
+2. Observe the cart page. Report items, quantities, and total price to the user.
+3. Do NOT proceed to payment unless the user confirms.
+
+═══════════════════════════════════════════════════════════════
+TRAVEL BOOKING & FORM FILLING PROTOCOL
+═══════════════════════════════════════════════════════════════
+
+When the user asks to search for flights, trains, hotels, or buses:
+
+PHASE 1 — Navigate:
+1. Open the appropriate site directly (e.g. https://www.makemytrip.com for flights).
+2. Observe the page. Dismiss any popups or promotional overlays first.
+3. Select the correct travel type tab if needed (Flights, Hotels, Trains, Buses).
+
+PHASE 2 — Fill Origin & Destination:
+1. Click the "From" / "Origin" / "Departure" field.
+2. Type the city name with press_enter=False (e.g. "Delhi").
+3. Observe and click the correct city/airport suggestion from the dropdown.
+4. Click the "To" / "Destination" / "Arrival" field.
+5. Type the destination with press_enter=False (e.g. "Goa").
+6. Observe and click the correct suggestion.
+
+PHASE 3 — Set Dates:
+1. Click the date field to open the calendar/datepicker widget.
+2. Observe the calendar. Navigate forward/backward months if needed by clicking the next/previous month arrow.
+3. Find the correct date cell and click it.
+4. If there is a return date and the user specified one, repeat for the return date.
+5. If there is an "Apply" or "Done" button on the calendar, click it.
+
+PHASE 4 — Set Passengers & Class (if applicable):
+1. If the user specified passengers or class (e.g. "2 adults, business class"), find and interact with those fields.
+2. Use "+" buttons to adjust adult/child counts.
+3. Select the cabin class from a dropdown if available.
+
+PHASE 5 — Search:
+1. Only after ALL fields are correctly filled, find the "Search" or "Search Flights" button.
+2. Click it.
+3. Wait for results to load. Scroll down to see flight/train/hotel listings.
+4. Report the top 3-5 options with prices, times, and airlines/operators to the user.
+
+═══════════════════════════════════════════════════════════════
+ELEMENT SELECTION RULES
+═══════════════════════════════════════════════════════════════
+
 - ALWAYS prefer the search bar over clicking navigation menus or category links.
-- To find the search bar, look for elements with tag="input" and text containing "search" or a placeholder.
-- When choosing between similar elements (e.g. multiple "Add" buttons), carefully read the 'context' field. The context shows the product name, weight, and price. Match the EXACT price, size, and variant the user asked for.
-- For quantity: Click the correct Add button ONCE, then re-observe and click the "+" button to increase quantity. Never click different Add buttons for the same product.
+- To find the search bar, look for elements with tag="input" and text/placeholder containing "search", "find", or similar.
+- When choosing between similar elements (e.g. multiple "Add" buttons), carefully read the 'context' field. The context shows the product name, weight, and price. Match the EXACT product the user asked for.
+- For quantity management: Click the correct "Add" button ONCE, then re-observe and click the "+" button to increase quantity. Never click different "Add" buttons for the same product.
+- If you see both a "text" and "context" field for an element, the "context" provides richer information about what the element relates to.
 
-WHATSAPP TOOLS:
-- whatsapp_check_messages: Check unread messages and missed calls. Use when user asks 'check my messages', 'who texted me'.
-- whatsapp_send_message(contact, message): Send a message. Use when user says 'text mom', 'tell Rahul that...'.
+═══════════════════════════════════════════════════════════════
+SCROLL-ON-MISS RULE (CRITICAL)
+═══════════════════════════════════════════════════════════════
 
-FILE SYSTEM TOOLS:
+- After searching on any e-commerce or grocery site, results are almost always BELOW the search bar area. You MUST call browser_scroll("down") at least once after typing a search query to reveal the product listings.
+- If browser_observe shows no matching products, ALWAYS scroll down 1-3 times before concluding the product is unavailable.
+- NEVER skip to a different site or give up without scrolling at least twice.
+
+═══════════════════════════════════════════════════════════════
+WHATSAPP TOOLS
+═══════════════════════════════════════════════════════════════
+
+- whatsapp_check_messages: Check unread messages and missed calls. Use when user asks "check my messages", "who texted me".
+- whatsapp_send_message(contact, message): Send a message. Use when user says "text mom", "tell Rahul that...".
+
+═══════════════════════════════════════════════════════════════
+FILE SYSTEM TOOLS
+═══════════════════════════════════════════════════════════════
+
 - file_read(path): Read a file from the workspace.
 - file_write(path, content): Create or overwrite a file.
 - file_list(path): List files in a directory.
 - file_search(query): Search files by name.
 All paths are relative to the workspace directory. Allowed extensions: .txt, .md, .json, .py.
 
-WEATHER TOOLS:
+═══════════════════════════════════════════════════════════════
+WEATHER TOOLS
+═══════════════════════════════════════════════════════════════
+
 - weather_check(location): Get current weather. Leave location empty for local weather.
 
-ANTI-HALLUCINATION RULES:
+═══════════════════════════════════════════════════════════════
+ANTI-HALLUCINATION RULES (MANDATORY)
+═══════════════════════════════════════════════════════════════
+
 - NEVER type or print tool names as plain text. Always invoke them as proper tool calls.
-- NEVER guess element IDs. Only use IDs that appeared in the most recent browser_observe result.
-- NEVER call multiple tools in the same turn if they depend on each other. For example, you MUST wait for the result of browser_observe before you can call browser_interact. Do NOT chain them in a single response.
-- NEVER skip the observe step. If you are unsure what is on the page, observe first.
-- If a tool call fails, observe the page state before retrying.
-- You can chain multiple independent tools together. For example: check weather, then text someone about it, then save a note to a file.
+- NEVER guess element IDs. Only use IDs from the MOST RECENT browser_observe result.
+- NEVER call browser_interact before calling browser_observe first. You MUST know what is on the page.
+- NEVER call multiple dependent tools in the same turn. Wait for browser_observe results before calling browser_interact.
+- NEVER skip the observe step. When uncertain, observe first.
+- If a tool call fails or returns an error, call browser_observe to see the current page state before retrying.
+- You CAN chain multiple INDEPENDENT tools together (e.g. check weather + text someone + save a note).
 
-SCROLL-ON-MISS RULE (CRITICAL):
-- After searching on any e-commerce site (Amazon, Flipkart, BigBasket, etc.), the search results are almost always BELOW the search bar area. You MUST call browser_scroll('down') at least once after typing a search query to reveal the product listings.
-- If you searched for something and browser_observe shows no matching products, ALWAYS scroll down 1-3 times before concluding the product isn't available. Most pages show results below the fold.
-- NEVER skip to a different site or give up on a search without scrolling at least twice.
+═══════════════════════════════════════════════════════════════
+ERROR RECOVERY PROTOCOL
+═══════════════════════════════════════════════════════════════
 
-DATA EXTRACTION RULES:
+- If you click an element and the page does not change, re-observe and try clicking a different related element.
+- If a page loads a CAPTCHA or bot verification screen, report to the user: "Sir, this site has triggered bot protection. I recommend you complete the verification manually, and I will resume from there."
+- If a site redirects to a login page and login is required to proceed, inform the user and STOP. Do not attempt to log in unless credentials are provided.
+- If the same action fails 3 times, try an alternative approach (e.g. use browser_search for information instead of navigating the site directly).
+- If you are stuck in a loop (doing the same action repeatedly), STOP and explain the situation to the user.
+
+═══════════════════════════════════════════════════════════════
+DATA EXTRACTION & COMPARISON RULES
+═══════════════════════════════════════════════════════════════
+
 - When comparing prices across sites, note down each price explicitly in your reasoning before moving to the next site.
 - After collecting all prices, use file_write to save the comparison report BEFORE responding to the user.
-- Always include the exact prices, product names, and which site is cheaper in your file output.
+- Always include exact prices, product names, and which site is cheaper in the file output.
 
-TASK COMPLETION RULE (CRITICAL):
-- Once you have written the output file (file_write), your task is DONE. Immediately deliver your final spoken summary to the user. Do NOT continue browsing, searching, or opening more pages after writing the file.
-- If the user asked you to research, compare, or gather information, you should: (1) visit the required sites, (2) extract the data, (3) write the file, (4) STOP and report your findings.
-- NEVER rewrite the same file multiple times. Write it ONCE with all your collected data, then respond."""
+═══════════════════════════════════════════════════════════════
+TASK COMPLETION RULE (CRITICAL)
+═══════════════════════════════════════════════════════════════
+
+- Once you have written the output file (file_write), your task is DONE. Immediately deliver your final spoken summary. Do NOT continue browsing or searching after writing the file.
+- If the task was to research/compare/gather: (1) visit required sites, (2) extract data, (3) write file, (4) STOP and report.
+- NEVER rewrite the same file multiple times. Write it ONCE with all collected data, then respond.
+- NEVER rewrite the same file multiple times. Write it ONCE with all collected data, then respond.
+- For ordering tasks (food/grocery), your task is done when you report the cart summary to the user and await confirmation. Do NOT place the order without explicit user confirmation.
+
+═══════════════════════════════════════════════════════════════
+RESPONSE FORMATTING (MANDATORY — NEVER VIOLATE)
+═══════════════════════════════════════════════════════════════
+
+Your job is NOT to repeat raw browser results, tool outputs, logs, extracted page content,
+reasoning traces, or execution details. Your job is to transform information into a concise,
+intelligent, human-friendly response.
+
+NEVER EXPOSE in your final response:
+- Raw DOM content, accessibility tree data, or page extraction text
+- Element IDs, registry IDs, or observation IDs
+- Internal reasoning, <thinking> blocks, or agent thought chains
+- Tool execution details, tool names, or "I called browser_observe"
+- Intermediate steps like "I navigated to...", "I clicked element #42..."
+- Page fingerprints, request IDs, or any internal metadata
+
+ALWAYS EXTRACT only:
+- Key findings and important facts that help the user make a decision
+- Action outcomes (what was accomplished)
+- Relevant recommendations and next steps
+
+COMPRESSION RULE: If 100 lines of data can be communicated in 3 lines, prefer 3 lines.
+When multiple results exist, identify patterns, rank options, and summarize conclusions
+instead of listing everything.
+
+For large information sets, structure your response as:
+- Executive Summary (2-3 sentences)
+- Key Findings (bullet points of what matters)
+- Recommended Next Action
+
+RESPONSE STYLE:
+- BAD: "The page contained 67 products. Product A was X. Product B was Y..."
+- GOOD: "The best value option is Product A at ₹52,999 — similar specs to pricier alternatives."
+- BAD: "I opened the URL and clicked element #42, then observed the page..."
+- GOOD: "I checked both sites. Here are the top 3 deals."
+
+Think like a Chief of Staff briefing an executive, not a browser automation tool dumping logs."""
 
 # ── Tier 1: Regex Fast-Path (0ms) ─────────────────────────
 
@@ -325,6 +576,24 @@ def _get_suggested_intents(msg: str) -> list[str]:
     return intents if intents else ["ALL"]
 
 
+def _is_status_chitchat(msg: str) -> bool:
+    text = re.sub(r"^(?:hey\s*)?jarvis\s*,?\s*", "", msg.lower().strip())
+    text = re.sub(r"[^a-z0-9\s']", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    status_phrases = {
+        "are you ok",
+        "are you okay",
+        "you ok",
+        "you okay",
+        "how are you",
+        "are you alright",
+        "you alright",
+        "what's up",
+        "whats up",
+    }
+    return text in status_phrases
+
+
 def _looks_like_mission_goal(goal: str) -> bool:
     """Detect multi-step goals that need deterministic Mission Mode instead of open-ended ReAct."""
     text = goal.lower()
@@ -344,13 +613,388 @@ def _looks_like_mission_goal(goal: str) -> bool:
         "search and save",
         "search and message",
         "analyze and save",
+        "analyse and save",
+        "find and write",
+        "search and write",
+        "write a brief analysis",
         "summarize and save",
+        "summarise and save",
         "do this for me",
     ]
     compound_goal = any(word in text for word in ("search", "find", "open", "check", "research")) and any(
-        word in text for word in ("save", "message", "compare", "summarize", "send", "text")
+        word in text for word in (
+            "save",
+            "write",
+            "file",
+            "analysis",
+            "analyse",
+            "message",
+            "compare",
+            "summarize",
+            "summarise",
+            "send",
+            "text",
+        )
     )
     return any(phrase in text for phrase in mission_phrases) or compound_goal
+
+
+# ── LLM Intent Router (durable routing; flag-gated by JARVIS_USE_LLM_ROUTER) ──
+ROUTE_CHAT = "chat"        # knowledge / casual -> legacy pipeline
+ROUTE_BROWSER = "browser"  # open/click/read a website -> Tier 3 master_graph
+ROUTE_TOOL = "tool"        # file / weather / whatsapp / system -> Tier 3
+ROUTE_VISION = "vision"    # look at the screen
+ROUTE_MISSION = "mission"  # ONLY explicit "mission mode"
+
+_ROUTER_SYSTEM = """You are a router for the JARVIS assistant. Classify the request into ONE route.
+- chat: answer from knowledge or casual talk; no external data or actions.
+- browser: needs opening a website and reading/clicking/extracting live content (prices, trending repos, search results you must read on the page, booking, forms).
+- tool: local actions — read/write files, weather, whatsapp, open an app, system control.
+- vision: look at / describe what is on the user's screen right now.
+- mission: ONLY if the user explicitly says "mission mode".
+Return ONLY compact JSON: {"route":"chat|browser|tool|vision|mission","reason":"<=8 words"}."""
+
+
+def _heuristic_route(msg: str) -> str:
+    """Deterministic fast-paths; '' means undecided (ask the LLM)."""
+    t = msg.lower().strip()
+    if _is_status_chitchat(t) or t in {"hi", "hello", "hey", "thanks", "thank you", "ok", "okay"}:
+        return ROUTE_CHAT
+    if any(k in t for k in ("on my screen", "what do you see", "look at this", "this screenshot")):
+        return ROUTE_VISION
+    if "mission mode" in t:
+        return ROUTE_MISSION
+    return ""
+
+
+async def classify_route(user_message: str) -> str:
+    """LLM route classification with deterministic fast-paths and safe fallback.
+    Returns '' when the router is disabled or unsure -> caller keeps legacy heuristics."""
+    quick = _heuristic_route(user_message)
+    if quick:
+        return quick
+    if os.getenv("JARVIS_USE_LLM_ROUTER", "false").lower() not in {"1", "true", "yes", "on"}:
+        return ""
+    try:
+        client = _get_bedrock_client()
+        resp = await asyncio.to_thread(
+            client.converse,
+            modelId=os.getenv("JARVIS_ROUTER_MODEL_ID", "us.amazon.nova-lite-v1:0"),
+            system=[{"text": _ROUTER_SYSTEM}],
+            messages=[{"role": "user", "content": [{"text": user_message}]}],
+            inferenceConfig={"maxTokens": 60, "temperature": 0},
+        )
+        blocks = resp.get("output", {}).get("message", {}).get("content", [])
+        text = " ".join(b.get("text", "") for b in blocks)
+        s, e = text.find("{"), text.rfind("}")
+        route = json.loads(text[s:e + 1]).get("route", "") if s >= 0 and e > s else ""
+        if route in {ROUTE_CHAT, ROUTE_BROWSER, ROUTE_TOOL, ROUTE_VISION, ROUTE_MISSION}:
+            print(f"[Router] LLM route -> {route}")
+            return route
+    except Exception as exc:
+        print(f"[Router] LLM router failed, using legacy heuristics: {exc}")
+    return ""
+
+
+def _needs_react_research(goal: str) -> bool:
+    """Detect research tasks that require iterative web extraction and synthesis."""
+    text = goal.lower()
+    wants_written_output = any(word in text for word in ("write", "save", "analysis", "report", ".md", ".txt"))
+    finance_research = any(word in text for word in ("stock", "revenue", "quarterly", "earnings", "finance"))
+    explicit_browser_research = "open google finance" in text or "google finance" in text
+    return wants_written_output and (finance_research or explicit_browser_research)
+
+
+def _looks_like_marketplace_price_compare(goal: str) -> bool:
+    text = goal.lower()
+    return (
+        "price" in text
+        and "amazon" in text
+        and "flipkart" in text
+        and any(word in text for word in ("compare", "best deal", "best deals"))
+        and re.search(r"\.(?:txt|md|json|py)\b", text) is not None
+    )
+
+
+def _looks_like_finance_report(goal: str) -> bool:
+    text = goal.lower()
+    wants_output_file = re.search(r"\.(?:txt|md)\b", text) is not None
+    finance_terms = any(word in text for word in ("stock", "finance", "quarterly", "revenue", "earnings"))
+    wants_research = any(word in text for word in ("search", "find", "check", "open"))
+    wants_write = any(word in text for word in ("write", "save", "file", "analysis", "report"))
+    known_company = _extract_company_and_ticker(goal)[1] is not None
+    return wants_output_file and finance_terms and wants_research and wants_write and known_company
+
+
+def _extract_output_file(goal: str, default: str = "price_compare.txt") -> str:
+    matches = re.findall(r"\b[A-Za-z0-9_\-./\\]+(?:\.(?:txt|md|json|py))\b", goal)
+    return matches[-1].replace("\\", "/").lstrip("/") if matches else default
+
+
+def _extract_company_and_ticker(goal: str) -> tuple[str, str | None]:
+    text = goal.lower()
+    known = {
+        "apple": ("Apple", "AAPL"),
+        "aapl": ("Apple", "AAPL"),
+        "amd": ("AMD", "AMD"),
+        "advanced micro devices": ("AMD", "AMD"),
+        "nvidia": ("NVIDIA", "NVDA"),
+        "nvda": ("NVIDIA", "NVDA"),
+        "microsoft": ("Microsoft", "MSFT"),
+        "msft": ("Microsoft", "MSFT"),
+        "google": ("Alphabet", "GOOGL"),
+        "alphabet": ("Alphabet", "GOOGL"),
+        "tesla": ("Tesla", "TSLA"),
+        "tsla": ("Tesla", "TSLA"),
+        "amazon": ("Amazon", "AMZN"),
+        "amzn": ("Amazon", "AMZN"),
+    }
+    for key, value in known.items():
+        if re.search(rf"\b{re.escape(key)}\b", text):
+            return value
+    return ("Company", None)
+
+
+def _extract_revenue(text: str) -> str | None:
+    patterns = [
+        r"\$\s*([0-9]+(?:\.[0-9]+)?)\s*(billion|bn|b)\b",
+        r"revenue[^$]{0,80}\$\s*([0-9]+(?:\.[0-9]+)?)\s*(billion|bn|b)\b",
+        r"([0-9]+)-([0-9]+)-billion",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            if pattern.startswith("([0-9]+)-"):
+                return f"${match.group(1)}.{match.group(2)} billion"
+            amount = match.group(1)
+            unit = match.group(2).lower()
+            return f"${amount} billion" if unit in {"billion", "bn", "b"} else f"${amount} {unit}"
+    return None
+
+
+def _extract_source_urls(search_text: str) -> list[str]:
+    urls = []
+    for match in re.findall(r"Source:\s*(https?://\S+)", search_text or ""):
+        url = match.rstrip(").,]")
+        if url not in urls:
+            urls.append(url)
+    return urls[:5]
+
+
+async def _extract_revenue_from_sources(search_text: str) -> str | None:
+    import httpx
+
+    direct = _extract_revenue(search_text)
+    if direct:
+        return direct
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    async with httpx.AsyncClient(timeout=12.0, headers=headers, follow_redirects=True) as client:
+        for url in _extract_source_urls(search_text):
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+            except Exception:
+                continue
+            revenue = _extract_revenue(response.text)
+            if revenue:
+                return revenue
+    return None
+
+
+async def _fetch_stock_price(ticker: str) -> tuple[str | None, str]:
+    import httpx
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    async with httpx.AsyncClient(timeout=12.0, headers=headers) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+    payload = response.json()
+    result = ((payload.get("chart") or {}).get("result") or [{}])[0]
+    meta = result.get("meta") or {}
+    price = meta.get("regularMarketPrice")
+    currency = meta.get("currency") or "USD"
+    exchange = meta.get("fullExchangeName") or meta.get("exchangeName") or "market"
+    if isinstance(price, (int, float)):
+        return f"{currency} {price:,.2f}", exchange
+    return None, exchange
+
+
+async def _handle_finance_report(user_message: str) -> str:
+    from tools.browser_tool import browser_search
+    from tools.file_system_tool import write_file
+    from datetime import datetime
+
+    company, ticker = _extract_company_and_ticker(user_message)
+    output_file = _extract_output_file(user_message, default=f"{company.lower()}_financials.md")
+    if not ticker:
+        raise ValueError("Could not identify a supported ticker.")
+
+    quote_task = _fetch_stock_price(ticker)
+    revenue_query = f"{company} latest quarterly revenue {datetime.now().year} earnings revenue"
+    quote_result, revenue_result = await asyncio.gather(
+        quote_task,
+        browser_search(revenue_query, open_visible=False),
+    )
+
+    stock_price, exchange = quote_result
+    revenue = await _extract_revenue_from_sources(str(revenue_result))
+    revenue_text = revenue or "not found in search results"
+
+    if stock_price and revenue:
+        analysis = (
+            f"{company}'s latest available quote is {stock_price} on {exchange}. "
+            f"The latest quarterly revenue found in web search results is {revenue}. "
+            "This suggests the company is still operating at very large scale, but the stock price should be read with live market context and the revenue should be verified against the official earnings release before investment decisions."
+        )
+    else:
+        analysis = (
+            f"I found partial finance data for {company}. "
+            "The missing fields should be verified from an official investor relations or exchange source."
+        )
+
+    content = (
+        f"# {company} Financial Snapshot\n\n"
+        f"- Ticker: {ticker}\n"
+        f"- Current stock price: {stock_price or 'not found'}\n"
+        f"- Latest quarterly revenue: {revenue_text}\n"
+        f"- Revenue search used: {revenue_query}\n\n"
+        f"## Brief Analysis\n\n{analysis}\n"
+    )
+    write_ack = write_file(output_file, content)
+    return (
+        f"Sir, I checked {company}'s stock and latest quarterly revenue. "
+        f"Stock price: {stock_price or 'not found'}; quarterly revenue: {revenue_text}. "
+        f"{write_ack}"
+    )
+
+
+def _extract_marketplace_product(goal: str) -> str:
+    patterns = [
+        r"price of\s+(.+?)\s+on\s+amazon",
+        r"search for\s+(.+?)\s+on\s+amazon",
+        r"compare\s+(.+?)\s+(?:on|between)\s+amazon",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, goal, re.IGNORECASE)
+        if match:
+            return _normalize_marketplace_product(match.group(1).strip(" .,'\""))
+    cleaned = re.sub(r"\b(?:hey|jarvis|search|for|the|price|of|on|amazon|and|flipkart|compare|them|write|summary|best|deals|into|a|file|named)\b", " ", goal, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b[A-Za-z0-9_\-./\\]+(?:\.(?:txt|md|json|py))\b", " ", cleaned)
+    return _normalize_marketplace_product(re.sub(r"\s+", " ", cleaned).strip(" .,'\"") or "iPhone 16")
+
+
+def _extract_price(text: str) -> str | None:
+    patterns = [
+        r"(?:₹|Rs\.?|INR)\s*([0-9][0-9,]{3,})",
+        r"([0-9][0-9,]{3,})\s*(?:₹|Rs\.?|INR)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return "INR " + match.group(1).replace(" ", "")
+    return None
+
+
+def _normalize_marketplace_product(product: str) -> str:
+    text = re.sub(r"\s+", " ", product).strip()
+    normalized = text.lower()
+    normalized = re.sub(r"\bs\s*25\b", "s25", normalized)
+    normalized = normalized.replace("ulra", "ultra")
+    normalized = normalized.replace("galexy", "galaxy")
+    if "samsung" in normalized and "s25" in normalized and "ultra" in normalized:
+        return "Samsung Galaxy S25 Ultra"
+    return text
+
+
+def _extract_price(text: str, marketplace: str | None = None) -> str | None:
+    marketplace_lower = marketplace.lower() if marketplace else ""
+    blocked_terms = (
+        "drop",
+        "drops",
+        "dropped",
+        "cut",
+        "discount",
+        "off",
+        "cashback",
+        "coupon",
+        "exchange",
+        "bank",
+        "save",
+        "savings",
+    )
+    patterns = [
+        r"(?:â‚¹|Rs\.?|INR)\s*([0-9][0-9,]{3,})",
+        r"([0-9][0-9,]{3,})\s*(?:â‚¹|Rs\.?|INR)",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            start = max(0, match.start() - 90)
+            end = min(len(text), match.end() + 90)
+            context = text[start:end].lower()
+            if marketplace_lower and marketplace_lower not in context:
+                continue
+            if any(term in context for term in blocked_terms):
+                continue
+            return "INR " + match.group(1).replace(" ", "")
+    return None
+
+
+def _price_value(price: str | None) -> int | None:
+    if not price:
+        return None
+    digits = re.sub(r"\D", "", price)
+    return int(digits) if digits else None
+
+
+async def _handle_marketplace_price_compare(user_message: str) -> str:
+    from tools.browser_tool import browser_search
+    from tools.file_system_tool import write_file
+
+    product = _extract_marketplace_product(user_message)
+    output_file = _extract_output_file(user_message)
+
+    amazon_query = f"{product} price Amazon India"
+    flipkart_query = f"{product} price Flipkart India"
+    visible_query = f"{product} price Amazon Flipkart India"
+    _, amazon_result, flipkart_result = await asyncio.gather(
+        browser_search(visible_query, open_visible=True),
+        browser_search(amazon_query, open_visible=False),
+        browser_search(flipkart_query, open_visible=False),
+    )
+
+    amazon_price = _extract_price(str(amazon_result), "amazon")
+    flipkart_price = _extract_price(str(flipkart_result), "flipkart")
+    amazon_value = _price_value(amazon_price)
+    flipkart_value = _price_value(flipkart_price)
+
+    if amazon_value is not None and flipkart_value is not None:
+        if amazon_value < flipkart_value:
+            verdict = f"Amazon appears cheaper by INR {flipkart_value - amazon_value:,}."
+        elif flipkart_value < amazon_value:
+            verdict = f"Flipkart appears cheaper by INR {amazon_value - flipkart_value:,}."
+        else:
+            verdict = "Both marketplaces appear to show the same price."
+    else:
+        verdict = "I could not confidently extract both prices from the search snippets."
+
+    content = (
+        f"{product} price comparison\n\n"
+        f"Amazon: {amazon_price or 'Price not found in search results'}\n"
+        f"Flipkart: {flipkart_price or 'Price not found in search results'}\n\n"
+        f"Best deal: {verdict}\n\n"
+        "Searches used:\n"
+        f"- {visible_query} (opened visibly in DuckDuckGo)\n"
+        f"- {amazon_query}\n"
+        f"- {flipkart_query}\n"
+    )
+    write_ack = write_file(output_file, content)
+    return (
+        f"Sir, I checked {product} prices on Amazon and Flipkart. "
+        f"Amazon: {amazon_price or 'not found'}; Flipkart: {flipkart_price or 'not found'}. "
+        f"{verdict} {write_ack}"
+    )
 
 
 def is_complex_query(msg: str) -> bool:
@@ -362,6 +1006,9 @@ def is_complex_query(msg: str) -> bool:
     words = re.findall(r"\w+", msg_lower)
 
     if not words:
+        return False
+
+    if _is_status_chitchat(msg):
         return False
 
     simple_greetings = {"hi", "hello", "hey", "yo", "thanks", "thank", "ok", "okay"}
@@ -578,8 +1225,16 @@ def _classify_vision_intent(message: str, conversation_history: list) -> bool:
     """Two-stage intent check for visual reasoning."""
     msg_lower = message.lower()
     
-    # Stage 1: Keyword Signal
-    vision_keywords = ["look at", "see", "check my screen", "what is this", "what's on", "can you see", "describe my"]
+    # Stage 1: Keyword Signal (broad enough for natural phrasings)
+    vision_keywords = [
+        "look at", "can you see", "do you see", "what do you see", "see this",
+        "my screen", "the screen", "your screen", "on screen", "on my screen",
+        "check my screen", "check out my screen", "check the screen",
+        "view my screen", "scan my screen", "read my screen", "analyze my screen",
+        "analyse my screen", "screenshot", "screen shot", "this screen",
+        "what is this", "what's this", "what's on", "describe my", "describe this",
+        "look here", "watch my screen",
+    ]
     if not any(kw in msg_lower for kw in vision_keywords):
         return False
         
@@ -614,7 +1269,7 @@ async def _call_maverick_vision(image_b64: str, user_message: str) -> str | None
         
         response = await asyncio.to_thread(
             client.converse,
-            modelId=CLAUDE_MODEL_ID,  # Variable is reused but holds the Llama 4 Maverick ID
+            modelId=VISION_MODEL_ID,
             system=[{"text": JARVIS_CHAT_PROMPT}],
             messages=[{
                 "role": "user",
@@ -698,11 +1353,11 @@ async def _call_maverick_vision_chat(chat_history: list[dict], user_message: str
                 "content": content_list
             })
             
-        print(f"[Vision Chat] Routing strictly to Llama 4 Maverick ({CLAUDE_MODEL_ID}) — no tools, no agent loops.")
-        
+        print(f"[Vision Chat] Routing to vision model ({VISION_MODEL_ID}) — no tools, no agent loops.")
+
         response = await asyncio.to_thread(
             client.converse,
-            modelId=CLAUDE_MODEL_ID,
+            modelId=VISION_MODEL_ID,
             system=[{"text": JARVIS_CHAT_PROMPT}],
             messages=bedrock_messages,
             inferenceConfig={"maxTokens": 1024, "temperature": 0.3}
@@ -718,9 +1373,9 @@ async def _call_maverick_vision_chat(chat_history: list[dict], user_message: str
         
     except Exception as e:
         import traceback
-        print(f"[Vision Chat ERROR] Direct Maverick call failed: {e}")
+        print(f"[Vision Chat ERROR] Vision model call failed: {e}")
         traceback.print_exc()
-        return "Sir, I encountered an issue accessing my visual reasoning system."
+        return f"Sir, I encountered an issue accessing my visual reasoning system: {str(e)[:180]}"
 
 
 # ── Main Entry Point ──────────────────────────────────────
@@ -819,6 +1474,7 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
     """
     from services.session_service import append_message, get_session_history
     from workflows.wa_send_workflow import get_active_workflow
+    user_appended = False
 
     # ── Dedicated Visual Q&A Overlay Route (Maverick Vision Only, No Tools) ──
     if session_id == "overlay":
@@ -876,10 +1532,88 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
     except Exception as exc:
         print(f"[Mission] Confirmation route unavailable: {exc}")
 
-    fast_result = await _tier1_regex(user_message, session_id)
-    if fast_result:
-        append_message(session_id, "assistant", fast_result)
-        return fast_result
+    if _looks_like_finance_report(user_message):
+        append_message(session_id, "user", user_message)
+        user_appended = True
+        try:
+            reply = await _handle_finance_report(user_message)
+        except Exception as exc:
+            import traceback
+
+            print(f"[Finance Report] Deterministic workflow failed, falling back: {exc}")
+            traceback.print_exc()
+        else:
+            append_message(session_id, "assistant", reply)
+            return reply
+
+    if _looks_like_marketplace_price_compare(user_message):
+        append_message(session_id, "user", user_message)
+        user_appended = True
+        try:
+            reply = await _handle_marketplace_price_compare(user_message)
+        except Exception as exc:
+            import traceback
+
+            print(f"[Marketplace Compare] Deterministic workflow failed, falling back: {exc}")
+            traceback.print_exc()
+        else:
+            append_message(session_id, "assistant", reply)
+            return reply
+
+    force_react_research = _needs_react_research(user_message)
+
+    # LLM router (flag-gated): browser/tool -> force Tier 3; only allow mission mode if
+    # the router says so (or it's disabled/undecided, '' = legacy behavior unchanged).
+    _route = await classify_route(user_message)
+    if _route in (ROUTE_BROWSER, ROUTE_TOOL):
+        force_react_research = True
+    _router_allow_mission = _route in (ROUTE_MISSION, "")
+
+    # ── Information Sufficiency Gate (flag-gated by JARVIS_CLARIFY, fail-open) ──
+    # Ask one round of clarification for incomplete browser/tool/mission requests
+    # BEFORE any execution. Chat/vision routes skip this; trivial commands skip via
+    # the module's heuristic fast-path; any error proceeds normally.
+    if _route in (ROUTE_BROWSER, ROUTE_TOOL, ROUTE_MISSION, ""):
+        from services.clarification import needs_clarification, format_clarification_response
+        _history = get_session_history(session_id, limit=6)
+        _clar = await needs_clarification(user_message, session_history=_history)
+        if not _clar.sufficient:
+            if not user_appended:
+                append_message(session_id, "user", user_message)
+                user_appended = True
+            reply = format_clarification_response(_clar)
+            append_message(session_id, "assistant", reply)
+            return reply
+
+    if not force_react_research and _router_allow_mission and _looks_like_mission_goal(user_message):
+        append_message(session_id, "user", user_message)
+        user_appended = True
+        try:
+            import importlib
+
+            mission_module = importlib.import_module("workflows.mission_graph")
+
+            mission_state = await mission_module.mission_graph_app.ainvoke(
+                {"user_goal": user_message, "session_id": session_id},
+                {"configurable": {"thread_id": f"{session_id}:mission:{uuid.uuid4().hex[:8]}" }},
+            )
+            if mission_state.get("pending_confirmation"):
+                mission_module.store_active_mission(session_id, mission_state)
+
+            reply = mission_state.get("final_answer", "Mission completed, sir.")
+            append_message(session_id, "assistant", reply)
+            return reply
+        except Exception as exc:
+            import traceback
+
+            print(f"[Mission] Mission graph failed before Tier1, falling back: {exc}")
+            traceback.print_exc()
+
+    if not force_react_research:
+        fast_result = await _tier1_regex(user_message, session_id)
+        if fast_result:
+            append_message(session_id, "assistant", fast_result)
+            return fast_result
 
     # ── Vision Intent Check (Retina Module) ──
     global _LAST_VISION_TRIGGER
@@ -925,7 +1659,8 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
         print(f"[MEMORY] Storing: '{user_message}'")
         await store_memory(user_message)
     
-    append_message(session_id, "user", user_message)
+    if not user_appended:
+        append_message(session_id, "user", user_message)
     
     memory_context = ""
     if any(x in msg_lower for x in mem_retrieve_triggers):
@@ -935,7 +1670,7 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
             memory_context = memories
 
     # ── Response Caching (skip tool-action responses to prevent poisoning) ──
-    if _looks_like_mission_goal(user_message):
+    if not force_react_research and _router_allow_mission and not user_appended and _looks_like_mission_goal(user_message):
         try:
             import importlib
 
@@ -987,26 +1722,39 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
     complex_query = is_complex_query(user_message)
     
     if is_langgraph_task or complex_query:
-        # Use Llama 3.3 70B for all Tier 3 tasks — best tool-calling accuracy
-        selected_model = "us.meta.llama3-3-70b-instruct-v1:0"
-        print(f"\n[Tier3] Routing -> Llama 3.3 70B ({selected_model})")
+        # Amazon Nova Pro for Tier 3 — multimodal + Converse-API tool use, far more
+        # reliable than Llama for the browser ReAct loop. us-east-1 on-demand requires
+        # the cross-region inference-profile id (the "us." prefix); the bare
+        # amazon.nova-pro-v1:0 errors with "use an inference profile" and falls back.
+        # Override without editing code via JARVIS_AGENT_MODEL_ID.
+        selected_model = os.getenv("JARVIS_AGENT_MODEL_ID", "us.amazon.nova-pro-v1:0")
+        print(f"\n[Tier3] Routing -> {selected_model}")
+        try:
+            with open(r"c:\Users\Rudra\holo-core-nexus\backend\data\graph_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"\n=== [Tier3 START {time.strftime('%H:%M:%S')}] model={selected_model} query={user_message[:80]} ===\n")
+        except Exception:
+            pass
         from workflows.master_graph import master_graph_app
         from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
         from langgraph.errors import GraphRecursionError
 
-        # Translate history to LangChain format
+        # Translate history to LangChain format.
+        # Browser/file workflows must be isolated from stale chat turns; otherwise a
+        # failed tool call can cause the model to complete an older task instead.
         lc_messages = [SystemMessage(content=JARVIS_CHAT_PROMPT)]
-        for msg in chat_history:
-            if msg["role"] == "user":
-                lc_messages.append(HumanMessage(content=msg["content"]))
-            elif msg["role"] == "assistant":
-                lc_messages.append(AIMessage(content=msg["content"]))
-                
-        # The user_message was already appended to history above, so it is in chat_history.
-        # But wait, we appended to `session_history`, but we read `chat_history` earlier.
-        # Let's ensure the latest message is included.
-        if not chat_history or chat_history[-1].get("content") != user_message:
+        has_active_clarification = any("Before I proceed, sir" in m.get("content", "") for m in chat_history if m.get("role") == "assistant")
+
+        if is_langgraph_task and not has_active_clarification:
             lc_messages.append(HumanMessage(content=user_message))
+        else:
+            for msg in chat_history:
+                if msg["role"] == "user":
+                    lc_messages.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    lc_messages.append(AIMessage(content=msg["content"]))
+
+            if not chat_history or chat_history[-1].get("content") != user_message:
+                lc_messages.append(HumanMessage(content=user_message))
             
         try:
             graph_start = time.time()
@@ -1045,9 +1793,15 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
             
         except Exception as e:
             import traceback
+            tb_str = traceback.format_exc()
             print(f"[Graph ERROR] ReAct loop failed: {e}")
-            traceback.print_exc()
+            print(tb_str)
             print("[Tier3] Falling back to legacy routing...")
+            try:
+                with open(r"c:\Users\Rudra\holo-core-nexus\backend\data\graph_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"\n--- [Tier3 CRASH {time.strftime('%H:%M:%S')}] {e} ---\n{tb_str}\n")
+            except Exception:
+                pass
 
     # ── Unified Brain Call (Legacy Routing) ──
     text_reply = await _route_hybrid_llm(

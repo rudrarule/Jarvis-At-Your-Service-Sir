@@ -23,10 +23,10 @@ class ResponseBubble(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setMinimumWidth(480)
-        self.setMaximumWidth(720)
-        self.setMinimumHeight(120)
-        self.setMaximumHeight(650)
+        self.setMinimumWidth(520)
+        self.setMaximumWidth(820)
+        self.setMinimumHeight(160)
+        self.setMaximumHeight(780)
         self.setStyleSheet(RESPONSE_STYLE)
 
         self.title = QLabel("☷ J.A.R.V.I.S")
@@ -77,11 +77,16 @@ class ResponseBubble(QWidget):
         self.follow_up_input.setPlaceholderText("Ask a follow-up, Sir...")
         self.follow_up_input.returnPressed.connect(self._submit_follow_up)
 
+        divider = QFrame(self)
+        divider.setObjectName("HeaderDivider")
+        divider.setFixedHeight(1)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 14, 18, 16)
         layout.setSpacing(10)
         layout.addLayout(header)
-        layout.addWidget(self.scroll_area)
+        layout.addWidget(divider)
+        layout.addWidget(self.scroll_area, 1)
         layout.addWidget(self.follow_up_input)
 
         self._drag_offset: QPoint | None = None
@@ -209,23 +214,27 @@ class ResponseBubble(QWidget):
         self.activateWindow()
 
     def _add_message_bubble(self, role: str, text: str) -> None:
+        content_w = 620
         bubble = QFrame()
         bubble.setObjectName(f"ChatBubble_{role}")
-        
+        bubble.setMaximumWidth(int(content_w * (0.80 if role == "user" else 0.94)))
+
+        bubble_layout = QVBoxLayout(bubble)
+        bubble_layout.setContentsMargins(14, 9, 14, 11)
+        bubble_layout.setSpacing(3)
+
+        caption = QLabel("You" if role == "user" else "☷ J.A.R.V.I.S")
+        caption.setObjectName("BubbleRole_user" if role == "user" else "BubbleRole_assistant")
+        bubble_layout.addWidget(caption)
+
         label = QLabel(text)
+        label.setObjectName("BubbleText")
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        
-        if role == "user":
-            label.setStyleSheet("color: #e6f9ff; font-size: 13px; font-weight: 500;")
-        else:
-            label.setStyleSheet("color: #edfaff; font-size: 13px; line-height: 1.45;")
-            
-        bubble_layout = QVBoxLayout(bubble)
-        bubble_layout.setContentsMargins(12, 10, 12, 10)
         bubble_layout.addWidget(label)
-        
-        self.chat_layout.insertWidget(self.chat_layout.count() - 1, bubble)
+
+        align = Qt.AlignmentFlag.AlignRight if role == "user" else Qt.AlignmentFlag.AlignLeft
+        self.chat_layout.insertWidget(self.chat_layout.count() - 1, bubble, 0, align)
  
     def _clear_chat(self) -> None:
         while self.chat_layout.count() > 1:
@@ -235,40 +244,27 @@ class ResponseBubble(QWidget):
                 widget.deleteLater()
  
     def _adjust_bubble_size(self) -> None:
-        width = 600
-        text_width = width - 36 - 24  # subtracting layout margins and bubble paddings
-        fm = self.fontMetrics()
-        
-        total_text_height = 0
-        
-        # Sweep all children in chat_layout to calculate exact height
-        for i in range(self.chat_layout.count()):
-            item = self.chat_layout.itemAt(i)
-            if not item:
-                continue
-            widget = item.widget()
-            if widget:
-                if isinstance(widget, QFrame):
-                    label = widget.findChild(QLabel)
-                    if label:
-                        rect = fm.boundingRect(0, 0, text_width, 10000, 
-                                               int(Qt.TextFlag.TextWordWrap), label.text())
-                        total_text_height += rect.height() + 24  # text footprint + bubble margins/paddings
-                elif isinstance(widget, QLabel):
-                    rect = fm.boundingRect(0, 0, text_width, 10000, 
-                                           int(Qt.TextFlag.TextWordWrap), widget.text())
-                    total_text_height += rect.height() + 12
-        
-        # Enforce exact child geometry so QScrollArea viewport detects true scrolling height
-        self.chat_container.setFixedWidth(width - 36)
-        self.chat_container.setFixedHeight(total_text_height + 20)
-        
-        # Bubble height = container height + header (45) + input (45) + window margins (40)
-        bubble_height = total_text_height + 150
-        bubble_height = min(max(bubble_height, 160), 650)
-        
-        self.setFixedSize(width, bubble_height)
-        QTimer.singleShot(50, self._scroll_to_bottom)
+        # Fix the width up front so the scroll area can lay the (word-wrapped) content
+        # out at a stable width; the real height is then read from the layout itself
+        # AFTER it settles — far more reliable than estimating from font metrics, and it
+        # lets the QScrollArea scroll naturally when content exceeds the capped height.
+        self.setMinimumHeight(160)
+        self.setMaximumHeight(780)
+        self.setFixedWidth(680)
+        if self.height() < 200:
+            self.resize(680, 380)
+        QTimer.singleShot(0, self._finalize_size)
+
+    def _finalize_size(self) -> None:
+        # chat_container is widgetResizable=True, so Qt has sized it to the viewport
+        # width and computed the wrapped height for us.
+        content_h = self.chat_container.sizeHint().height()
+        if content_h <= 0:
+            content_h = 360
+        chrome = 150  # header + divider + input + margins + spacing
+        height = min(max(content_h + chrome, 220), 780)
+        self.setFixedSize(680, height)
+        QTimer.singleShot(30, self._scroll_to_bottom)
 
     def _scroll_to_bottom(self) -> None:
         scrollbar = self.scroll_area.verticalScrollBar()

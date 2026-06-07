@@ -73,3 +73,13 @@ backend/data/*.sqlite3-*
 *.png
 *.jpg
 *.jpeg
+
+# Local runtime & debug files
+backend/browser_user_data_*
+backend/data/e2e_debug/
+backend/db/*.db
+richa-s-kitchen-showcase/
+ngrok.yml
+skills/
+
+

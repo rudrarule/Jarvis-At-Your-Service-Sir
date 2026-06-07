@@ -28,6 +28,7 @@ import { Link } from "react-router-dom";
 import ParticleBackground from "@/components/jarvis/ParticleBackground";
 import EnhancedChatPanel from "@/components/jarvis/EnhancedChatPanel";
 import VoiceButton from "@/components/jarvis/VoiceButton";
+import MissionTimeline, { type TimelineNode } from "@/components/jarvis/MissionTimeline";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -140,6 +141,106 @@ export default function Dashboard() {
     [dashboard.missions],
   );
   const telemetry = useMissionTelemetry(activeMission, displayMissions, dashboard.health, dashboard.eventCount);
+
+  // Reconstruct dynamic mission timeline from events
+  const selectedMission = useMemo(
+    () => dashboard.missions.find((m) => m.id === activeMission),
+    [dashboard.missions, activeMission]
+  );
+  
+  const selectedSessionId = selectedMission?.session_id;
+
+  const missionEvents = useMemo(() => {
+    return dashboard.events.filter(
+      (event) =>
+        event.payload?.session_id === selectedSessionId ||
+        event.payload?.mission_id === activeMission
+    );
+  }, [dashboard.events, selectedSessionId, activeMission]);
+
+  const timelineNodes = useMemo<TimelineNode[]>(() => {
+    const planCreatedEvent = missionEvents.find((e) => e.type === "plan.created");
+    
+    if (planCreatedEvent && planCreatedEvent.payload && Array.isArray(planCreatedEvent.payload.steps)) {
+      const steps = planCreatedEvent.payload.steps as any[];
+      return steps.map((step) => {
+        let state: "complete" | "active" | "failed" | "pending" = "pending";
+        let detail = step.instruction || `Run ${step.tool}`;
+        let retryCount = 1;
+        const maxRetries = 3;
+
+        // Trace tool activity in real-time events
+        const toolStartedEvents = missionEvents.filter(
+          (e) => e.type === "tool.started" && e.payload?.step_id === step.id
+        );
+        if (toolStartedEvents.length > 0) {
+          state = "active";
+          const attempts = toolStartedEvents.map((e) => Number(e.payload?.attempt || 1));
+          retryCount = Math.max(...attempts);
+        }
+
+        const retryEvents = missionEvents.filter(
+          (e) => e.type === "retry.scheduled" && e.payload?.step_id === step.id
+        );
+        if (retryEvents.length > 0) {
+          state = "active";
+          const attempts = retryEvents.map((e) => Number(e.payload?.attempt || 1));
+          retryCount = Math.max(...attempts);
+        }
+
+        const verifierEvents = missionEvents.filter(
+          (e) => e.type === "verifier.result" && e.payload?.step_id === step.id
+        );
+        if (verifierEvents.length > 0) {
+          const latestVerifier = verifierEvents[verifierEvents.length - 1];
+          const passed = latestVerifier.payload?.passed;
+          if (passed) {
+            state = "complete";
+          } else {
+            const isDoneRetrying = verifierEvents.length > maxRetries || !selectedMission || selectedMission.status !== "running";
+            if (isDoneRetrying) {
+              state = "failed";
+            } else {
+              state = "active";
+            }
+          }
+          if (latestVerifier.payload?.reason) {
+            detail = String(latestVerifier.payload.reason);
+          }
+        }
+
+        // Apply final status overrides from mission state if finalized
+        if (step.status === "done") {
+          state = "complete";
+        } else if (step.status === "failed") {
+          state = "failed";
+        }
+
+        // Clean tool name label for HUD presentation
+        const cleanLabel = step.tool
+          ? step.tool.replace("browser_", "").replace("whatsapp_", "").replace("_", " ")
+          : step.type || "node";
+
+        return {
+          label: cleanLabel,
+          state,
+          detail,
+          retryCount,
+          maxRetries,
+        };
+      });
+    }
+
+    // Fallback/Demo executionNodes
+    return executionNodes.map((node) => ({
+      label: node.label,
+      state: node.state as any,
+      detail: node.detail,
+      retryCount: 1,
+      maxRetries: 3,
+    }));
+  }, [missionEvents, selectedMission]);
+
   const retinaImageUrl = dashboard.latestVisionFrame?.image_base64
     ? `data:${dashboard.latestVisionFrame.mime_type ?? "image/jpeg"};base64,${dashboard.latestVisionFrame.image_base64}`
     : null;
@@ -213,7 +314,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <section className="grid flex-1 gap-4 xl:grid-cols-[300px_minmax(520px,1fr)_420px]">
+        <section className="grid flex-1 gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-[300px_minmax(520px,1fr)_420px]">
           <aside className="space-y-4">
             <Panel title="Mission Queue" icon={<Layers3 className="h-4 w-4" />}>
               <div className="space-y-3">
@@ -339,32 +440,9 @@ export default function Dashboard() {
             </Panel>
           </section>
 
-          <aside className="space-y-4">
+          <aside className="col-span-1 md:col-span-2 xl:col-span-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-4 md:space-y-0 xl:space-y-4">
             <Panel title="Execution Tree" icon={<Command className="h-4 w-4" />}>
-              <div className="space-y-3">
-                {executionNodes.map((node, index) => (
-                  <div key={node.label} className="relative flex gap-3">
-                    {index < executionNodes.length - 1 && (
-                      <div className="absolute left-[7px] top-5 h-full w-px bg-jarvis-border/30" />
-                    )}
-                    <div
-                      className={cn(
-                        "relative z-10 mt-1 h-3.5 w-3.5 rounded-full border",
-                        node.state === "complete" && "border-emerald-300 bg-emerald-300/30",
-                        node.state === "active" && "border-primary bg-primary/40 shadow-[0_0_18px_rgba(0,170,255,0.65)]",
-                        node.state === "pending" && "border-jarvis-border bg-muted/30",
-                      )}
-                    />
-                    <div className="flex-1 rounded-md border border-jarvis-border/20 bg-muted/10 p-2.5">
-                      <div className="flex items-center justify-between">
-                        <p className="font-display text-[10px] tracking-[0.18em] text-jarvis-bright">{node.label}</p>
-                        <p className="font-display text-[8px] tracking-[0.16em] text-primary">{node.state.toUpperCase()}</p>
-                      </div>
-                      <p className="mt-1 font-body text-xs text-jarvis-dim">{node.detail}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <MissionTimeline nodes={timelineNodes} isPaused={isPaused} />
             </Panel>
 
             <Panel title="Command Lane" icon={<MessageSquareText className="h-4 w-4" />}>

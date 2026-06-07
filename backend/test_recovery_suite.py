@@ -30,10 +30,16 @@ from services.mission_store import _connect, _DB_PATH
 @pytest.mark.asyncio
 async def test_tc076_llm_timeout_graceful_handling():
     """TC_076 | LLM API Timeout Fallback: Ensure LLM service falls back gracefully on Bedrock timeout."""
+    # Clear LLM cache to ensure mock is used
+    workflows.master_graph._llm_cache.clear()
+
     with patch("workflows.master_graph._get_llm") as mock_get:
         mock_llm = MagicMock()
-        # Simulate timeout or service error
-        mock_llm.ainvoke.side_effect = Exception("AWS Bedrock Request Timeout")
+        # The graph calls llm.bind_tools(tools), and then bound_llm.ainvoke(messages).
+        # We need to mock the chain: _get_llm -> llm.bind_tools -> bound_llm.ainvoke
+        mock_bound = MagicMock()
+        mock_bound.ainvoke = MagicMock(side_effect=Exception("AWS Bedrock Request Timeout"))
+        mock_llm.bind_tools.return_value = mock_bound
         mock_get.return_value = mock_llm
 
         # Verify our ReAct execution graph gracefully raises/handles errors
@@ -124,8 +130,10 @@ def test_tc079_sqlite_locked_concurrency():
 @pytest.mark.asyncio
 async def test_tc080_playwright_browser_auto_restart():
     """TC_080 | Browser Crash Recovery: Verify BrowserStateManager regenerates context after close/crash."""
-    # Ensure starting from clean state
-    await BrowserStateManager.close_all()
+    # Fully reset state from previous tests to avoid stale Playwright instances
+    BrowserStateManager._playwright = None
+    BrowserStateManager._context = None
+    BrowserStateManager._page = None
     
     # 1. Open browser page
     page1 = await BrowserStateManager.get_page()

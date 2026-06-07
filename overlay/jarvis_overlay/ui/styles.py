@@ -21,36 +21,67 @@ QLineEdit::placeholder {
 
 RESPONSE_STYLE = """
 QWidget#ResponseBubble {
-    background: #000000;
-    border: 2px solid rgba(92, 225, 255, 180);
-    border-radius: 16px;
+    /* SOLID graphite (no gradient): gradient fills don't paint on a
+       WA_TranslucentBackground top-level window, which made the panel see-through
+       over white sites. A solid colour paints opaquely and stays readable. */
+    background: #11161d;
+    border: 1px solid rgba(92, 225, 255, 150);
+    border-radius: 18px;
 }
 QLabel {
-    color: #ffffff;
+    color: #eaf6ff;
     background: transparent;
     font-size: 14px;
-    line-height: 1.45;
+}
+QLabel#BubbleText {
+    color: #edf7ff;
+    font-size: 14px;
+}
+QLabel#BubbleRole_assistant {
+    color: rgba(120, 232, 255, 225);
+    font-size: 10px;
+    font-weight: bold;
+}
+QLabel#BubbleRole_user {
+    color: rgba(190, 246, 255, 220);
+    font-size: 10px;
+    font-weight: bold;
+}
+QFrame#HeaderDivider {
+    background: rgba(146, 224, 255, 38);
+    border: none;
 }
 QPushButton {
-    color: rgba(255, 255, 255, 210);
-    background: rgba(255, 255, 255, 22);
-    border: 1px solid rgba(255, 255, 255, 34);
-    border-radius: 10px;
-    padding: 5px 10px;
+    color: rgba(230, 245, 255, 215);
+    background: rgba(255, 255, 255, 16);
+    border: 1px solid rgba(146, 224, 255, 40);
+    border-radius: 9px;
+    padding: 5px 11px;
     font-size: 11px;
 }
 QPushButton:hover {
-    background: rgba(255, 255, 255, 45);
+    background: rgba(92, 225, 255, 55);
     color: #ffffff;
+    border: 1px solid rgba(92, 225, 255, 150);
 }
 QPushButton#CopyButton {
-    color: #5ce1ff;
-    border: 1px solid rgba(92, 225, 255, 140);
-    background: rgba(92, 225, 255, 24);
+    color: #06303c;
     font-weight: bold;
+    border: none;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7fe7ff, stop:1 #45c8ff);
 }
 QPushButton#CopyButton:hover {
-    background: rgba(92, 225, 255, 60);
+    background: #9cefff;
+    color: #06303c;
+}
+QPushButton#CaptureButton {
+    color: #7fe7ff;
+    font-weight: bold;
+    border: 1px solid rgba(124, 232, 255, 150);
+    background: rgba(92, 225, 255, 30);
+}
+QPushButton#CaptureButton:hover {
+    background: rgba(92, 225, 255, 80);
     color: #ffffff;
 }
 QScrollArea#ResponseScrollArea {
@@ -59,47 +90,52 @@ QScrollArea#ResponseScrollArea {
 }
 QScrollBar:vertical {
     border: none;
-    background: rgba(255, 255, 255, 10);
-    width: 6px;
-    margin: 0px;
-    border-radius: 3px;
+    background: transparent;
+    width: 9px;
+    margin: 2px 0px 2px 0px;
 }
 QScrollBar::handle:vertical {
-    background: rgba(92, 225, 255, 110);
-    min-height: 20px;
-    border-radius: 3px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(124, 232, 255, 175), stop:1 rgba(74, 200, 255, 150));
+    min-height: 30px;
+    border-radius: 4px;
 }
 QScrollBar::handle:vertical:hover {
-    background: rgba(92, 225, 255, 180);
+    background: rgba(124, 232, 255, 235);
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
 }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+}
 QLineEdit#FollowUpInput {
     color: #ffffff;
-    background: #050505;
-    border: 1px solid rgba(92, 225, 255, 90);
-    border-radius: 12px;
-    padding: 10px 14px;
+    background: rgba(8, 14, 22, 235);
+    border: 1px solid rgba(92, 225, 255, 80);
+    border-radius: 13px;
+    padding: 11px 15px;
     font-size: 13px;
     selection-background-color: rgba(0, 212, 255, 120);
 }
 QLineEdit#FollowUpInput:focus {
-    border: 1px solid rgba(92, 225, 255, 200);
-    background: #000000;
+    border: 1px solid rgba(124, 232, 255, 210);
+    background: rgba(10, 17, 26, 250);
 }
 QLineEdit#FollowUpInput::placeholder {
-    color: rgba(255, 255, 255, 110);
+    color: rgba(210, 238, 255, 120);
 }
 QFrame#ChatBubble_user {
-    background: rgba(92, 225, 255, 22);
-    border: 1px solid rgba(92, 225, 255, 90);
-    border-radius: 12px;
+    /* SOLID colours so text stays readable over any background. */
+    background: #18495f;
+    border: 1px solid rgba(124, 232, 255, 150);
+    border-radius: 13px;
 }
 QFrame#ChatBubble_assistant {
-    background: #0a0a0a;
-    border: 1px solid rgba(255, 255, 255, 22);
-    border-radius: 12px;
+    background: #161e2a;
+    border: 1px solid rgba(146, 224, 255, 40);
+    border-left: 2px solid rgba(92, 225, 255, 150);
+    border-radius: 13px;
 }
 """
 

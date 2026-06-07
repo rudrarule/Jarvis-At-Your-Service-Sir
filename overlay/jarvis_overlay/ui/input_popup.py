@@ -33,13 +33,15 @@ class AskPopup(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.input)
 
-    def open_at(self, point: QPoint) -> None:
-        self.input.clear()
+    def open_at(self, point: QPoint, seed: str = "") -> None:
+        self.input.setText(seed or "")
         self.move(_clamp_to_screen(point + QPoint(14, 14), self.width(), self.height()))
         self.show()
         self.raise_()
         self.activateWindow()
         self.input.setFocus(Qt.FocusReason.PopupFocusReason)
+        if seed:
+            self.input.setCursorPosition(len(seed))
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:

@@ -53,6 +53,34 @@
     --glass-border: hsla(200, 80%, 40%, 0.3);
     --glass-blur: blur(20px);
   }
+
+  .theme-amber {
+    --primary: 38 100% 50%;
+    --primary-foreground: 220 25% 4%;
+    --border: 38 60% 20%;
+    --input: 38 60% 20%;
+    --ring: 38 100% 50%;
+    --jarvis-glow: 38 100% 50%;
+    --jarvis-border: 38 80% 30%;
+    --jarvis-text-bright: 38 100% 85%;
+    --jarvis-text-dim: 38 30% 45%;
+    --glow-primary: 0 0 20px hsl(38 100% 50% / 0.4), 0 0 60px hsl(38 100% 50% / 0.1);
+    --glass-border: hsla(38, 80%, 40%, 0.3);
+  }
+
+  .theme-crimson {
+    --primary: 0 85% 55%;
+    --primary-foreground: 220 25% 4%;
+    --border: 0 60% 20%;
+    --input: 0 60% 20%;
+    --ring: 0 85% 55%;
+    --jarvis-glow: 0 85% 55%;
+    --jarvis-border: 0 80% 30%;
+    --jarvis-text-bright: 0 100% 85%;
+    --jarvis-text-dim: 0 30% 45%;
+    --glow-primary: 0 0 20px hsl(0 85% 55% / 0.4), 0 0 60px hsl(0 85% 55% / 0.1);
+    --glass-border: hsla(0, 80%, 40%, 0.3);
+  }
 }
 
 @layer base {

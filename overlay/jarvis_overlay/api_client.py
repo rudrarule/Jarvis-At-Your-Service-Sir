@@ -113,6 +113,36 @@ class OverlayOcrWorker(QObject):
             return response.json()
 
 
+class OverlayChatWorker(QObject):
+    """Direct conversation with J.A.R.V.I.S — no screen capture required.
+
+    Hits the same /chat brain the main app uses, so the orb can hold a real
+    conversation (and run agent/browser tasks) without selecting a region."""
+
+    finished = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, config: OverlayConfig, question: str, session_id: str | None = None):
+        super().__init__()
+        self._config = config
+        self._question = question
+        self._session_id = session_id or "default"
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(asyncio.run(self._post()))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    async def _post(self) -> dict:
+        payload = {"message": self._question, "session_id": self._session_id}
+        async with httpx.AsyncClient(timeout=self._config.request_timeout_s) as client:
+            response = await client.post(f"{self._config.backend_url}/chat", json=payload)
+            if response.status_code >= 400:
+                raise RuntimeError(_extract_error(response))
+            return response.json()
+
+
 def _extract_error(response: httpx.Response) -> str:
     try:
         payload = response.json()

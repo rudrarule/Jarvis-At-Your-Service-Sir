@@ -459,10 +459,27 @@ def store_active_mission(session_id: str, state: MissionState) -> None:
 
 
 async def _invoke_tool(tool: Any, args: dict[str, Any]) -> Any:
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine:
+        result = coroutine(**args)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
     if hasattr(tool, "ainvoke"):
-        return await tool.ainvoke(args)
-    if hasattr(tool, "invoke"):
-        result = tool.invoke(args)
+        try:
+            return await tool.ainvoke(args)
+        except NotImplementedError:
+            pass
+
+    func = getattr(tool, "func", None)
+    if func:
+        result = func(**args)
+    elif hasattr(tool, "invoke"):
+        try:
+            result = tool.invoke(args)
+        except NotImplementedError:
+            result = tool(**args)
     else:
         result = tool(**args)
     if inspect.isawaitable(result):

@@ -20,3 +20,4 @@ pyautogui>=0.9.54
 Pillow>=10.2.0
 pytesseract>=0.3.13
 pygetwindow>=0.0.9
+langgraph-checkpoint-sqlite>=2.0.0
