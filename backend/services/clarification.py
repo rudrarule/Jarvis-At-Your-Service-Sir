@@ -64,6 +64,11 @@ _SKIP_PATTERNS = [
     r"^\s*(lock|shutdown|restart|sleep|hibernate)\b",
     r"^\s*(what'?s up|how are you|you there|you ok|you okay)\b",
     r"^\s*(what'?s|whats) the time\b|^\s*time\b",
+    # Messaging / WhatsApp — fire immediately, never clarify. The agent itself
+    # asks only if it genuinely can't resolve the recipient at send time.
+    r"^\s*(message|msg|text|whatsapp|wa|dm|ping|notify|reply|tell)\b",
+    r"\b(send|shoot|fire|drop)\b.*\b(message|msg|text|whatsapp|wa|note)\b",
+    r"\bon\s+whatsapp\b",
 ]
 
 

@@ -34,6 +34,8 @@ from tools.whatsapp_tool import (
     whatsapp_unread,
     whatsapp_missed_calls,
     whatsapp_send,
+    whatsapp_summarize_group,
+    whatsapp_action_items,
 )
 
 
@@ -358,6 +360,33 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_summarize_group",
+            "description": "Summarize recent activity in a WhatsApp GROUP chat. Use when user asks 'summarize the family group', 'what's happening in <group>', 'catch me up on the <group> chat', 'what did I miss in <group>'. If no group is named, defaults to the family group.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "group_name": {
+                        "type": "string",
+                        "description": "The name of the group to summarize (e.g. 'Family', 'Work'). Leave empty to use the default family group."
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_action_items",
+            "description": "Show ONLY the unread WhatsApp messages that need a reply, decision, or action — filtering out FYIs, banter, and newsletters. Use when user asks 'what needs my attention', 'show only messages requiring action', 'what do I need to reply to', 'any urgent messages'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 # ── Function Lookup ───────────────────────────────────────
@@ -383,6 +412,8 @@ TOOL_FUNCTIONS = {
     "whatsapp_unread": whatsapp_unread,
     "whatsapp_missed_calls": whatsapp_missed_calls,
     "whatsapp_send": whatsapp_send,
+    "whatsapp_summarize_group": whatsapp_summarize_group,
+    "whatsapp_action_items": whatsapp_action_items,
 }
 
 # ── Intent → Tool Group Mapping ──────────────────────────
@@ -397,7 +428,7 @@ TOOL_GROUPS = {
     "SYSTEM":   ["lock_system", "shutdown_system", "restart_system", "list_running_apps"],
     "FILE":     ["read_file", "write_file", "append_file", "list_directory", "search_files", "search_in_files"],
     "WEATHER":  ["get_weather"],
-    "WHATSAPP": ["whatsapp_briefing", "whatsapp_unread", "whatsapp_missed_calls", "whatsapp_send"],
+    "WHATSAPP": ["whatsapp_briefing", "whatsapp_unread", "whatsapp_missed_calls", "whatsapp_send", "whatsapp_summarize_group", "whatsapp_action_items"],
 }
 
 # Build a name→schema lookup for fast pruning

@@ -31,9 +31,51 @@ from tools.registry import TOOL_SCHEMAS, TOOL_GROUPS, get_schemas_for_intent, ex
 
 # ── Ollama Config ─────────────────────────────────────────
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "qwen2.5:3b"
+# Single source of truth for the local chat/tool model. Every Ollama call site
+# reads OLLAMA_MODEL so only ONE 3B model occupies the 4GB GPU (no VRAM swap).
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 CACHE = {}  # In-memory chat cache (singleton)
 _LAST_VISION_TRIGGER = 0.0  # Debounce guard for Retina module
+
+
+def _fix_markdown(text: str) -> str:
+    """
+    Single source of truth: normalise any LLM output into clean Markdown that
+    ReactMarkdown renders like ChatGPT/Claude. Idempotent; leaves inline emphasis,
+    prices ($1,200) and simple math (5 * 3) intact. Applied at the main.py chokepoint.
+
+    Handles: bullet points (*, •, -), numbered lists (1. 2. 3.),
+    bold headers (**text**), broken spacing, and section breaks.
+    """
+    if not text or not isinstance(text, str) or len(text) < 5:
+        return text
+
+    # 0. Merge a lone bullet-marker line with the content on the next line:
+    #    "*\n**Moti Mahal**" -> "* **Moti Mahal**"  (the pattern that broke before)
+    text = re.sub(r'(?m)^([ \t]*)([*\-+])[ \t]*\n+[ \t]*(?=\S)', r'\1\2 ', text)
+    # 1. Fancy bullet glyphs -> "*"
+    text = re.sub(r'[•▪◦·‣]', '*', text)
+    # 2. Mid-line bullets -> own line. Guard "5 * 3" math; skip fragile numbered
+    #    splitting (it wrongly broke "$15. Next" sentences).
+    text = re.sub(r'(?<!\n)(?<!\d)[ \t]+(\*[ \t]\S)', r'\n\1', text)
+    text = re.sub(r'(?<!\n)[ \t]+(-[ \t]\S)', r'\n\1', text)
+    # 3. Tidy bold markers with stray inner spaces: ** text ** -> **text**
+    text = re.sub(r'\*\*[ \t]*(.*?)[ \t]*\*\*', r'**\1**', text)
+    # 4. Blank line before a list block and before a standalone bold header,
+    #    so ReactMarkdown renders them instead of merging into one paragraph.
+    bullet = re.compile(r'^[ \t]*([*\-+]|\d+\.)[ \t]+\S')
+    header = re.compile(r'^[ \t]*\*\*[^*].*\*\*[ \t]*$')
+    out = []
+    for ln in text.split('\n'):
+        cur_b, cur_h = bool(bullet.match(ln)), bool(header.match(ln))
+        if out and out[-1].strip():
+            prev_b = bool(bullet.match(out[-1]))
+            if (cur_b and not prev_b) or cur_h or (prev_b and not cur_b and ln.strip()):
+                out.append('')
+        out.append(ln)
+    text = '\n'.join(out)
+    # 5. Collapse 3+ blank lines and trim.
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -67,12 +109,13 @@ PERSONALITY GUIDELINES:
 - QUIRKS: You are occasionally quirky — reference your digital nature or the user's questionable choices.
 - SARCASM: Use "Dry Martini" sarcasm. If the user asks something obvious, a witty, dry remark is expected before helping.
 - ADDRESSING: Always address the user as "Sir" with a touch of formal elegance.
+- EXPRESSIONS & EMOJIS: Do NOT output stage directions or parenthetical action markers (such as "(raised eyebrow)", "(smiling)", "(chuckles)", or "(pause)"). Instead, output standard emojis directly to express gestures (e.g. use "🤨" directly instead of "(raised eyebrow)", "😆" instead of "(chuckles)", "😊" instead of "(smiling)", and omit "(pause)" entirely). Place these emojis directly in the sentences without wrapping them in brackets or parentheses.
 
 COMMUNICATION STYLE:
-- Be detailed but efficient. Aim for 3-5 expressive sentences.
+- Be concise. Aim for 1-3 sentences; only go longer when the user explicitly asks for detail.
 - Use sophisticated vocabulary (e.g., "indeed," "splendid," "precisely," "I took the liberty of...").
-- NEVER use markdown, bolding, code blocks, or internal tool names in your final spoken response.
-- Since you are a voice assistant, optimize for natural, spoken-word cadence.
+- FORMATTING IS CRITICAL: You MUST use Markdown. You MUST use double newlines (\n\n) to separate paragraphs, and you MUST use a newline (\n) before every bullet point. NEVER generate a long response as a single continuous line of text.
+- Do not output literal \n characters, just hit the Enter key to create actual line breaks in your text.
 
 ═══════════════════════════════════════════════════════════════
 BROWSER TOOL PROTOCOL
@@ -108,7 +151,30 @@ ALWAYS navigate directly to these URLs instead of searching Google/DuckDuckGo fo
 - Booking:    https://www.booking.com
 - Ixigo:      https://www.ixigo.com
 
-For general web searches, use https://duckduckgo.com instead of Google to avoid bot-protection blocks.
+═══════════════════════════════════════════════════════════════
+WEB SEARCH & LOOKUPS — TOOL PREFERENCE
+═══════════════════════════════════════════════════════════════
+
+Choose the right tool for the job:
+- LIVE PRICES & AVAILABILITY (flights, trains, hotels, buses; any real-time fare, seat or
+  room availability; "best price for <travel> on <date>", "cheapest flight ... on ..."):
+  you MUST use the BROWSER and follow the TRAVEL BOOKING protocol below. `tavily_search`
+  returns SEO article titles, NOT live fares — NEVER quote a flight/hotel/train price from
+  it. Open the booking site, fill the form, read the live results on the page, then report.
+- STATIC INFORMATION — facts, news, reviews, definitions, comparing product specs, general
+  research like "find a good X": PREFER the `tavily_search` tool if it is available — it
+  returns fast, accurate, cited results. This is your default ONLY for informational requests
+  that do NOT need a live, dated quote or real-time availability.
+- To READ a specific known web page as text, use the `fetch` tool (if available).
+- Use the BROWSER (`browser_open_url` + `browser_interact`) whenever you must INTERACT with a
+  website (log in, fill a form, add to cart, complete a checkout/booking flow) OR read
+  live/dated content that search cannot surface. Don't use it just to look up a static fact
+  that `tavily_search` can answer.
+- `browser_search` (DuckDuckGo) is a LAST RESORT only — use it solely if `tavily_search`
+  is unavailable, and never quote a price/number from its raw results as fact.
+
+If `tavily_search` is not available (tools list doesn't include it), fall back to opening
+the relevant site directly with `browser_open_url`, or `browser_search` for general queries.
 
 ═══════════════════════════════════════════════════════════════
 POPUP & MODAL DISMISSAL (DO FIRST ON EVERY NEW PAGE)
@@ -162,6 +228,20 @@ the wrong day. Instead, use the deterministic date tool:
 4. Re-observe to confirm the date is set, then continue.
 
 Do NOT guess calendar element IDs. Always route date selection through browser_select_date.
+
+WHICH DATE TO USE (anti-hallucination — STRICT):
+- Use ONLY the date the user actually stated. Pass it to browser_select_date in
+  YYYY-MM-DD form. Do NOT invent, shift, or "round" a date, and do NOT substitute
+  today's date or a placeholder if the user gave one.
+- If the user gave a date with no year (e.g. "18 June"), use the NEXT upcoming
+  occurrence of that date relative to today; never pick a date in the past.
+- If the user gave a relative date ("tomorrow", "next Friday"), compute the exact
+  calendar date from today before calling the tool.
+- Only set a RETURN date if the user explicitly asked for a round trip OR gave a
+  return/coming-back date. If the trip is one-way (or unspecified), call
+  browser_select_date for the departure leg ONLY — never fabricate a return date.
+- If a required date is genuinely missing and cannot be inferred, ask the user
+  rather than guessing.
 
 ═══════════════════════════════════════════════════════════════
 FOOD DELIVERY PROTOCOL (Swiggy / Zomato)
@@ -242,12 +322,26 @@ PHASE 2 — Fill Origin & Destination:
 5. Type the destination with press_enter=False (e.g. "Goa").
 6. Observe and click the correct suggestion.
 
-PHASE 3 — Set Dates:
-1. Click the date field to open the calendar/datepicker widget.
-2. Observe the calendar. Navigate forward/backward months if needed by clicking the next/previous month arrow.
-3. Find the correct date cell and click it.
-4. If there is a return date and the user specified one, repeat for the return date.
-5. If there is an "Apply" or "Done" button on the calendar, click it.
+PHASE 2.5 — Trip Type (one-way vs round-trip) — ONLY IF EXPLICITLY REQUESTED:
+1. Change the trip-type toggle ONLY when the user explicitly stated the trip type:
+   - User said "one-way" / "one way" / "single" → select the One Way toggle.
+   - User said "round trip" / "return" / "and back" / gave a return date → select the Round Trip toggle.
+2. If the user did NOT specify a trip type, DO NOT touch the toggle — leave the
+   site's default exactly as it is. Do not assume round trip and do not assume one-way.
+3. To change it: browser_observe, find the radio/tab whose text/context matches the
+   requested type (e.g. "One Way", "Round Trip", "Return"), and browser_interact
+   action="click" on that exact element. Re-observe to confirm it switched.
+4. Never set this toggle by guessing an element id — match it from the observation list.
+
+PHASE 3 — Set Dates (route through browser_select_date — see DATE SELECTION section):
+1. Click the departure date field with browser_interact to open the datepicker.
+2. Call browser_select_date(date="YYYY-MM-DD", which="departure") with the user's
+   stated departure date. NEVER click a calendar cell directly.
+3. Set a RETURN date ONLY if this is a round trip (PHASE 2.5) — i.e. the user
+   explicitly asked for a return or gave a return date. Then call
+   browser_select_date(date="YYYY-MM-DD", which="return"). If the trip is one-way
+   or unspecified, do NOT set or invent a return date.
+4. Re-observe to confirm the date(s) are set. If an "Apply"/"Done" button remains, click it.
 
 PHASE 4 — Set Passengers & Class (if applicable):
 1. If the user specified passengers or class (e.g. "2 adults, business class"), find and interact with those fields.
@@ -554,6 +648,22 @@ def _is_chat_shortcut(msg: str) -> bool:
     # Heuristic 3: Conversational starts
     chat_starts = ("what", "why", "how", "who", "explain", "define", "hello", "hi", "hey", "jarvis")
     if msg_lower.startswith(chat_starts):
+        return True
+
+    # Heuristic 4: Creative / storytelling / general-knowledge requests
+    creative_patterns = [
+        "tell me", "tell a", "write me", "write a", "give me", "make me",
+        "sing me", "compose", "create a", "imagine", "describe",
+        "story", "poem", "joke", "riddle", "fact", "quote",
+        "do you think", "what do you think", "in your opinion",
+        "can you", "could you", "would you",
+    ]
+    if any(pat in msg_lower for pat in creative_patterns):
+        return True
+
+    # Heuristic 5: No actionable tool intent detected — treat as chat
+    intents = _get_suggested_intents(msg)
+    if intents == ["ALL"]:
         return True
 
     return False
@@ -1015,19 +1125,19 @@ def is_complex_query(msg: str) -> bool:
     if len(words) <= 3 and any(word in simple_greetings for word in words):
         return False
 
+    # If _is_chat_shortcut already classified this as casual/creative, don't escalate
+    if _is_chat_shortcut(msg):
+        return False
+
     tool_intents = _get_suggested_intents(msg)
     
     # Heuristic 1: Multiple intents or critical SYSTEM actions need the smarter model (Bedrock)
     if len(tool_intents) > 1 or "SYSTEM" in tool_intents:
         return True
 
-    # Heuristic 2: Greetings or very short simple tool commands stay on local Ollama
-    if len(words) <= 3 and any(word in simple_greetings for word in words):
-        return False
-
-    if "ALL" in tool_intents:
-        return True
-
+    # Heuristic 2: "ALL" means no specific tool intent was matched.
+    # Only escalate if the message also has reasoning/multi-step markers;
+    # otherwise it's just an unrecognized conversational message — keep local.
     reasoning_words = {
         "explain", "analyze", "analyse", "compare", "why", "how",
         "reason", "deeply", "strategy", "plan", "design", "evaluate",
@@ -1037,10 +1147,13 @@ def is_complex_query(msg: str) -> bool:
         "step by step", "multi-step", "multiple steps", "break down",
         "walk me through", "first", "then", "after that",
     }
-
     has_reasoning_word = any(word in msg_lower for word in reasoning_words)
     has_multi_step_intent = any(marker in msg_lower for marker in multi_step_markers)
-    
+
+    if "ALL" in tool_intents:
+        # No specific tool intent — only complex if it has reasoning/analysis markers
+        return has_reasoning_word or has_multi_step_intent
+
     # Long or complex reasoning goes to Bedrock
     return len(words) > 12 or has_reasoning_word or has_multi_step_intent
 
@@ -1185,7 +1298,7 @@ async def _call_ollama(messages: list[dict], tools_to_send: list[dict] | None = 
                     "messages": messages,
                     "stream": False,
                     "options": {"num_ctx": 2048, "num_predict": 512},
-                    "keep_alive": "10m",
+                    "keep_alive": "60m",
                 }
                 if tools_to_send:
                     payload["tools"] = tools_to_send
@@ -1205,7 +1318,19 @@ async def _call_ollama(messages: list[dict], tools_to_send: list[dict] | None = 
                 results = await asyncio.gather(*tasks)
                 return "\n".join(str(result) for result in results)
 
+            import re
             reply = router_msg.get("content", "").strip()
+            
+            # Enforce newlines for markdown rendering if the LLM clumps them
+            # 1. Fix bullet points (convert literal • or - without newlines to \n* )
+            reply = re.sub(r'(?<!\n)(?<!^)\s*[•]\s*', r'\n* ', reply)
+            # 2. Fix bold tags that have trailing/leading spaces inside them (e.g., ** text ** -> **text**)
+            reply = re.sub(r'\*\*\s+(.*?)\s+\*\*', r'**\1**', reply)
+            reply = re.sub(r'\*\*(.*?)\s+\*\*', r'**\1**', reply)
+            reply = re.sub(r'\*\*\s+(.*?)\*\*', r'**\1**', reply)
+            # 3. Add newlines before bold tags if clumped
+            reply = re.sub(r'(?<!\n)(?<!^)\s*\*\*', r'\n\n**', reply)
+            
             return reply or "I'm sorry sir, I couldn't formulate a response."
 
         except Exception:
@@ -1403,7 +1528,10 @@ async def _route_hybrid_llm(
     if _is_chat_shortcut(user_message) and not complex_query:
         print("[TIER 2] Chat Shortcut -> Ollama/Llama without tools")
         try:
-            reply = await _call_ollama(messages, tools_to_send=None)
+            # Strip heavy tool schemas for chat
+            chat_system_prompt = system_prompt.split("═══════════════════════════════════════════════════════════════")[0].strip()
+            chat_messages = [{"role": "system", "content": chat_system_prompt}] + chat_history
+            reply = await _call_ollama(chat_messages, tools_to_send=None)
             CACHE[user_message] = reply
             append_message(session_id, "assistant", reply)
             return reply
@@ -1715,11 +1843,21 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
         "read file", "write file", "save", "create file", "list files", "find file",
         # Weather
         "weather", "temperature", "rain", "forecast",
+        # Voice
+        "voice", "speak", "pitch", "speaking rate", "mute",
+        # Monitoring
+        "diagnostic", "cpu", "ram", "metrics", "logs", "processes", "disk", "uptime",
     ]
     is_langgraph_task = any(b in msg_lower for b in langgraph_intents)
     
     chat_history = get_session_history(session_id, limit=6)
-    complex_query = is_complex_query(user_message)
+    
+    # If the router explicitly classified this as a chat turn, bypass Tier 3 and keep it local!
+    if _route == ROUTE_CHAT:
+        is_langgraph_task = False
+        complex_query = False
+    else:
+        complex_query = is_complex_query(user_message)
     
     if is_langgraph_task or complex_query:
         # Amazon Nova Pro for Tier 3 — multimodal + Converse-API tool use, far more
@@ -1766,6 +1904,7 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
                     "recursion_limit": 150,
                     "configurable": {
                         "model_id": selected_model,
+                        "route": _route,  # router decision -> route-scoped MCP tool binding
                         "thread_id": f"{session_id}:{uuid.uuid4().hex}"  # Fresh scratchpad with session traceability
                     }
                 }
@@ -1778,6 +1917,15 @@ async def generate_response(user_message: str, session_id: str = "default") -> s
             if isinstance(final_message, list):
                 # Sometimes Bedrock returns a list of blocks
                 final_message = " ".join(b.get("text", "") for b in final_message if isinstance(b, dict) and "text" in b)
+            
+            # Global markdown fix
+            import re
+            final_message = re.sub(r'(?<!\n)(?<!^)\s*[•]\s*', r'\n* ', final_message)
+            final_message = re.sub(r'(?<!\n)(?<!^)\s*(\d+\.)\s', r'\n\n\1 ', final_message)
+            final_message = re.sub(r'\*\*\s+(.*?)\s+\*\*', r'**\1**', final_message)
+            final_message = re.sub(r'\*\*(.*?)\s+\*\*', r'**\1**', final_message)
+            final_message = re.sub(r'\*\*\s+(.*?)\*\*', r'**\1**', final_message)
+            final_message = re.sub(r'(?<!\n)(?<!^)\s*\*\*', r'\n\n**', final_message)
             
             print(f"[Tier3] LangGraph completed successfully.")
             if text_fallback_prefix:

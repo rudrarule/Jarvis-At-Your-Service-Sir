@@ -1021,6 +1021,30 @@ async def select_calendar_date(date_str: str, which: str = "departure") -> dict:
         return _format_response(False, "select_calendar_date",
                                 f"Could not parse date '{date_str}'. Use e.g. '2026-06-18' or '18 June 2026'.",
                                 error="unparseable_date")
+
+    # ── PAST-DATE / HALLUCINATED-YEAR CORRECTION ────────────────
+    # Models frequently emit a stale year (e.g. "2024-07-20" when today is
+    # 2026). A travel date can never be in the past, so roll the year forward
+    # to the next upcoming occurrence of that month+day. This is deterministic
+    # and prevents the picker from paging fruitlessly toward a dead year.
+    from datetime import date as _date
+
+    def _safe_date(y, mo, d):
+        try:
+            return _date(y, mo, d)
+        except ValueError:
+            return None
+
+    today = _date.today()
+    parsed = _safe_date(t["year"], t["month_num"], t["day"])
+    if parsed and parsed < today:
+        candidate = _safe_date(today.year, t["month_num"], t["day"])
+        if not candidate or candidate < today:
+            candidate = _safe_date(today.year + 1, t["month_num"], t["day"])
+        if candidate:
+            print(f"[Calendar] Corrected past/stale date {parsed.isoformat()} -> {candidate.isoformat()}")
+            t["year"] = candidate.year
+
     day, month, year = str(t["day"]), t["month"], str(t["year"])
     mon3 = month[:3]
     which = (which or "").strip().lower()

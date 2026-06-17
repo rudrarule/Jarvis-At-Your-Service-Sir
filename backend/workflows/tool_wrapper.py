@@ -6,6 +6,7 @@ Wraps browser, whatsapp, file system, and weather tools into LangChain @tool dec
 import hashlib
 import json
 import os
+import re
 import time
 
 from langchain_core.tools import tool
@@ -53,7 +54,29 @@ async def browser_interact(element_id: str, action: str, text: str = "", press_e
     # wrongly submit Enter into an autocomplete field. Coerce defensively.
     if isinstance(press_enter, str):
         press_enter = press_enter.strip().lower() not in {"false", "0", "no", "off", "none", ""}
+
+    # ── DATE GUARD ──────────────────────────────────────────────
+    # Weak tool-callers (e.g. Nova Pro) ignore the "use browser_select_date"
+    # instruction and instead TYPE a date string into the Departure/Return
+    # textbox (often with a hallucinated past year). Detect a date-like value
+    # and deterministically reroute: open the picker via the field they
+    # targeted, then select the date through the calendar tool (which also
+    # corrects past/stale years). This converts the bad path into the correct one.
+    if action == "type" and text and _looks_like_date(text):
+        which = "return" if re.search(r"return|back|arriv", (text or ""), re.IGNORECASE) else "departure"
+        try:
+            await interact_by_registry_id(element_id, "click", "", False)
+        except Exception:
+            pass
+        return await select_calendar_date(text, which)
+
     return await interact_by_registry_id(element_id, action, text, press_enter)
+
+
+def _looks_like_date(text: str) -> bool:
+    """True if the typed text is a concrete calendar date (ISO or '18 June 2026')."""
+    from tools.browser_tool import _parse_date_arg
+    return _parse_date_arg(text) is not None
 
 @tool
 async def browser_select_date(date: str, which: str = "departure") -> dict:

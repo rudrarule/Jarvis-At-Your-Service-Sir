@@ -1,0 +1,35 @@
+{
+  "name": "jarvis-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop shell for J.A.R.V.I.S — wraps the React UI in a native window and auto-spawns the Python backend.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:ui": "npm --prefix ../frontend run build",
+    "start:full": "npm run build:ui && electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.rudraksh.jarvis",
+    "productName": "J.A.R.V.I.S",
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      }
+    ],
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg" },
+    "linux": { "target": "AppImage" }
+  }
+}

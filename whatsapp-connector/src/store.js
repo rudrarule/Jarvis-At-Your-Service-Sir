@@ -19,6 +19,13 @@ const unreadChats = new Map();
 // Array<{ from, timestamp, status, isVideo, chatId }>
 const missedCalls = [];
 
+// ── Pending replies tracker (personal chats only) ───────
+// Map<chatId, { firstUnansweredAt: number, chatName: string, lastIncomingAt: number }>
+// Tracks personal (1:1) chats where an incoming message is still awaiting a
+// reply from the user. Used by the delayed auto-responder sweeper. Cleared the
+// moment the user replies (a fromMe message arrives for that chat).
+const pendingReplies = new Map();
+
 // ── Contacts cache ──────────────────────────────────────
 // Map<jid, { name, notify, pushName, short }>
 // Populated from Baileys contacts.upsert events + persisted to disk
@@ -98,6 +105,88 @@ function addUnreadMessage(chatId, chatName, msg) {
   if (chat.messages.length > config.maxUnreadPerChat) {
     chat.messages = chat.messages.slice(-config.maxUnreadPerChat);
   }
+
+  // ── Track pending reply for PERSONAL chats only ─────────
+  // Groups are intentionally excluded from the auto-responder.
+  const isGroup = chatId.endsWith("@g.us");
+  if (!isGroup && !msg.fromMe) {
+    const now = msg.timestamp || Date.now();
+    const existing = pendingReplies.get(chatId);
+    if (existing) {
+      existing.lastIncomingAt = now;
+      existing.chatName = chat.chatName;
+    } else {
+      pendingReplies.set(chatId, {
+        firstUnansweredAt: now,
+        lastIncomingAt: now,
+        chatName: chat.chatName,
+      });
+    }
+  }
+}
+
+/**
+ * Mark a personal chat as replied-to. Called when a fromMe message is observed
+ * for the chat (the user answered), which resets the unanswered timer so the
+ * auto-responder won't fire.
+ * @param {string} chatId
+ */
+function markReplied(chatId) {
+  if (!chatId) return;
+  pendingReplies.delete(chatId);
+}
+
+/**
+ * Return personal chats that have gone unanswered for at least `thresholdMs`.
+ * @param {number} thresholdMs — minimum age (ms) of the first unanswered message
+ * @returns {Array<{ chat_id: string, chat_name: string, first_unanswered_at: number, waiting_ms: number }>}
+ */
+function getPendingPersonalReplies(thresholdMs) {
+  const now = Date.now();
+  const out = [];
+  for (const [chatId, info] of pendingReplies) {
+    const waiting = now - info.firstUnansweredAt;
+    if (waiting >= thresholdMs) {
+      out.push({
+        chat_id: chatId,
+        chat_name: info.chatName || chatId,
+        first_unanswered_at: info.firstUnansweredAt,
+        waiting_ms: waiting,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Return the buffered messages for a single chat (read or unread, as retained
+ * in the in-memory store). Used by the backend for group summaries and
+ * action-item extraction.
+ * @param {string} chatId
+ * @returns {{ chat_id: string, chat_name: string, is_group: boolean, messages: Array }}
+ */
+function getChatMessages(chatId) {
+  const chat = unreadChats.get(chatId);
+  if (!chat) {
+    return {
+      chat_id: chatId,
+      chat_name: groupNames.get(chatId) || chatId,
+      is_group: chatId.endsWith("@g.us"),
+      messages: [],
+    };
+  }
+  return {
+    chat_id: chatId,
+    chat_name: chat.chatName,
+    is_group: chatId.endsWith("@g.us"),
+    messages: chat.messages.map((m) => ({
+      id: m.id,
+      text: m.text || "[media]",
+      timestamp: m.timestamp,
+      sender: m.sender,
+      from_me: m.fromMe,
+    })),
+  };
 }
 
 /**
@@ -148,8 +237,10 @@ function getUnreadSummary() {
 function clearUnread(chatId) {
   if (chatId) {
     unreadChats.delete(chatId);
+    pendingReplies.delete(chatId);
   } else {
     unreadChats.clear();
+    pendingReplies.clear();
   }
 }
 
@@ -350,6 +441,10 @@ module.exports = {
   getUnreadSummary,
   clearUnread,
   setGroupName,
+  getChatMessages,
+  // Pending replies / auto-responder
+  markReplied,
+  getPendingPersonalReplies,
   // Missed calls
   addMissedCall,
   getMissedCalls,

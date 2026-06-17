@@ -4,6 +4,7 @@ import { Send, Copy, Check, AlertCircle, X, Sparkles } from "lucide-react";
 import type { Message } from "@/hooks/useJarvis";
 import CommandSuggestions from "./CommandSuggestions";
 import ClarificationForm from "./ClarificationForm";
+import MarkdownMessage from "./MarkdownMessage";
 
 interface EnhancedChatPanelProps {
   messages?: Message[];
@@ -239,7 +240,11 @@ export default function EnhancedChatPanel({
                     </div>
                   )}
 
-                  <p className="leading-relaxed">{msg.text}</p>
+                  {msg.sender === "jarvis" ? (
+                    <MarkdownMessage text={msg.text} />
+                  ) : (
+                    <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                  )}
 
                   {/* User timestamp */}
                   {msg.sender === "user" && (

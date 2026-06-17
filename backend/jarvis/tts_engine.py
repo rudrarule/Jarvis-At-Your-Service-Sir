@@ -8,6 +8,7 @@ existing frontend /tts endpoint.
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import time
 from collections import OrderedDict
@@ -402,7 +403,16 @@ class JarvisVoice:
 
     @staticmethod
     def _clean_text(text: str) -> str:
-        return " ".join((text or "").strip().split())
+        text = text or ""
+        # Strip markdown so the voice never reads symbols aloud (e.g. "star star star").
+        text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)      # fenced code blocks
+        text = re.sub(r"`([^`]*)`", r"\1", text)                      # inline code
+        text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)        # links/images -> label
+        text = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", text)             # # headings
+        text = re.sub(r"(?m)^\s*[-*+]\s+", "", text)                  # bullet markers
+        text = re.sub(r"(?m)^\s*>\s?", "", text)                      # blockquotes
+        text = re.sub(r"[*_~]{1,3}", "", text)                        # **bold** _italic_ ~~strike~~
+        return " ".join(text.strip().split())
 
     @staticmethod
     def _normalize_percent(value: str | int) -> str:

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>J.A.R.V.I.S</title>
+    <style>
+      html, body {
+        margin: 0; height: 100%;
+        background: #0a0a0f; color: #5fd0ff;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        overflow: hidden;
+      }
+      .wrap {
+        height: 100%; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 28px;
+      }
+      .ring {
+        width: 96px; height: 96px; border-radius: 50%;
+        border: 3px solid rgba(95, 208, 255, 0.15);
+        border-top-color: #5fd0ff;
+        animation: spin 1s linear infinite;
+        box-shadow: 0 0 40px rgba(95, 208, 255, 0.25);
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .title { font-size: 22px; letter-spacing: 6px; font-weight: 600; }
+      .sub { font-size: 13px; color: #6b7a85; letter-spacing: 1px; }
+      .dots::after {
+        content: ""; animation: dots 1.4s steps(4, end) infinite;
+      }
+      @keyframes dots {
+        0% { content: ""; } 25% { content: "."; }
+        50% { content: ".."; } 75% { content: "..."; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="ring"></div>
+      <div class="title">J.A.R.V.I.S</div>
+      <div class="sub dots">Bringing systems online</div>
+    </div>
+  </body>
+</html>

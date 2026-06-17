@@ -160,7 +160,7 @@ def _active_llm_tier() -> str:
     use_claude = os.getenv("USE_CLAUDE", "true").strip().lower() in {"1", "true", "yes", "on"}
     if use_claude:
         return os.getenv("CLAUDE_MODEL_ID", "bedrock").split("/")[-1]
-    return os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+    return os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 
 
 def _tool_status() -> list[dict[str, str]]:

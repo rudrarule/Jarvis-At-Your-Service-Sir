@@ -285,7 +285,7 @@ async def llm_plan_mission(goal: str) -> list[dict[str, Any]]:
     except ImportError:
         return []
 
-    model = os.getenv("MISSION_PLANNER_MODEL", os.getenv("OLLAMA_MODEL", "qwen2.5:3b"))
+    model = os.getenv("MISSION_PLANNER_MODEL", os.getenv("OLLAMA_MODEL", "llama3.2:3b"))
     ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
     tool_names = ", ".join(sorted(ALLOWED_MISSION_TOOLS))
     prompt = (

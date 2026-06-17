@@ -25,7 +25,57 @@ from workflows.tool_wrapper import ALL_TOOLS
 
 MAX_AGENT_ITERATIONS = int(os.getenv("JARVIS_MAX_AGENT_ITERATIONS", "10"))
 MIN_TOOL_CONFIDENCE = float(os.getenv("JARVIS_MIN_TOOL_CONFIDENCE", "0.55"))
+# Tools that are allowed ONE verbatim retry before the loop-guard blocks them.
+# A weak/empty result is a legitimate reason to re-run these (search snippets vary,
+# observations re-scan the page) — unlike action tools, where an identical repeat
+# really is a stuck loop. They get seen_count>=2 grace instead of >=1.
+_RETRYABLE_TOOLS = {"browser_observe", "tavily_search", "browser_search", "fetch"}
 CONTEXT_WINDOW_SIZE = int(os.getenv("JARVIS_CONTEXT_WINDOW_SIZE", "6"))  # Keep last N AI+Tool pairs in full
+# ── Route-scoped MCP tool binding ─────────────────────────
+# Native tools (browser/file/whatsapp/weather) are ALWAYS bound — they're the
+# agent's core hands and were already reliable. We only scope MCP-sourced tools
+# by the router's decision so adding more MCP servers can't flood Nova's tool
+# list on turns where they're irrelevant. Maps route -> allowed MCP groups.
+# An unknown/empty route keeps ALL MCP tools (fail-open; never regress).
+_MCP_ROUTE_GROUPS: dict[str, set[str]] = {
+    "browser": {"web", "fs", "memory"},    # web research + save/read files + recall user facts
+    "mission": {"web", "fs", "voice", "monitoring", "memory", "google"},    # complex multi-step: allow everything
+    "tool":    {"fs", "voice", "monitoring", "memory", "google"},           # local actions: fs, voice, monitoring, memory, Gmail/Calendar/Drive
+    "vision":  set(),            # screen-look: no MCP tools (shouldn't reach graph)
+}
+
+# MCP groups that are bound on EVERY route, regardless of the route map above.
+# Voice is always-on so JARVIS can speak/narrate during any task (incl. browser
+# and vision turns). Survives future route additions automatically.
+_ALWAYS_ALLOWED_MCP_GROUPS: set[str] = {"voice"}
+
+
+def _route_scoping_enabled() -> bool:
+    return os.getenv("JARVIS_ROUTE_SCOPED_TOOLS", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_mcp_tool(tool) -> bool:
+    return bool((getattr(tool, "metadata", None) or {}).get("mcp"))
+
+
+def _scope_mcp_tools_by_route(tools: list, route: str) -> list:
+    """Drop MCP tools that don't belong to the given route. Native tools are kept
+    untouched. Fail-open: unknown route -> keep all MCP tools."""
+    if not _route_scoping_enabled():
+        return tools
+    route = (route or "").strip().lower()
+    if route not in _MCP_ROUTE_GROUPS:        # "" / unknown -> no scoping
+        return tools
+    allowed = _MCP_ROUTE_GROUPS[route]
+    scoped = []
+    for t in tools:
+        if not _is_mcp_tool(t):
+            scoped.append(t)                  # native tool — always keep
+            continue
+        group = (getattr(t, "metadata", None) or {}).get("mcp_group", "web")
+        if group in allowed or group in _ALWAYS_ALLOWED_MCP_GROUPS:
+            scoped.append(t)
+    return scoped
 
 # ── LLM Instance Cache ────────────────────────────────────
 # Avoids re-instantiating ChatBedrockConverse on every graph iteration.
@@ -744,7 +794,17 @@ def build_master_graph():
         if last_action == "browser_observe":
             active_tools = [t for t in active_tools if t.name != "file_search"]
             print(f"[DynTools] Last action was browser_observe — stripped file_search ({len(active_tools)} remaining)")
-            
+
+        # ── Route-scoped MCP binding ──
+        # Keep MCP tools only on routes where they help (web tools on browser/
+        # mission, fs tools on tool/mission). Native tools are never touched.
+        route = config.get("configurable", {}).get("route", "") or ""
+        before_scope = len(active_tools)
+        active_tools = _scope_mcp_tools_by_route(active_tools, route)
+        if len(active_tools) != before_scope:
+            print(f"[DynTools] Route '{route}' — scoped MCP tools "
+                  f"({before_scope - len(active_tools)} dropped, {len(active_tools)} bound)")
+
         bound_llm = llm.bind_tools(active_tools)
         
         # 4. Prune old images to stay under model limits (e.g. Bedrock max 3)
@@ -930,19 +990,40 @@ def build_master_graph():
             stale_count = 0
         else:
             stale_count += 1
-            if stale_count == 2:
-                # Agent is stalling — inject a recovery nudge
-                nudge = (
-                    "\n\n[SYSTEM NUDGE] You have not used any tools for 2 consecutive turns. "
-                    "If you cannot find what you're looking for, try: "
-                    "(1) browser_scroll('down') to reveal more content below the fold, "
-                    "(2) browser_observe() to re-read the current page, "
-                    "(3) browser_open_url() to navigate to a different page. "
-                    "If you have already collected enough information, summarize your findings and respond."
+
+            # ── Anti-Confabulation Guard ──
+            # The agent is delivering a FINAL answer (no tool calls). If it never ran a
+            # single tool this run yet asserts verifiable specifics (prices, costs,
+            # "verified"), it is fabricating from memory. Replace with an honest reply
+            # instead of letting invented figures reach the user.
+            ran_a_tool = any(isinstance(m, ToolMessage) for m in messages)
+            content_str = response.content if isinstance(response.content, str) else ""
+            asserts_specifics = bool(content_str) and (
+                any(sym in content_str for sym in ("₹", "$", "€", "£"))
+                or any(k in content_str.lower() for k in (
+                    "verified", "priced at", "price is", "total cost", "per night",
+                    "per person", "approximately", " inr", " usd", "rs.", "rupees",
+                ))
+            )
+            if not ran_a_tool and asserts_specifics:
+                print("[AntiConfab] Final answer asserts specifics but NO tool ran this turn — "
+                      "replacing ungrounded content with an honest disclaimer.")
+                try:
+                    with open(r"c:\Users\Rudra\holo-core-nexus\backend\data\graph_debug.log", "a", encoding="utf-8") as f:
+                        f.write(f"[AntiConfab] Blocked ungrounded claim: {content_str[:200]}\n")
+                except Exception:
+                    pass
+                response.content = (
+                    "Sir, I wasn't able to verify this from a live source just now, so I'd rather "
+                    "not quote specifics I can't stand behind. Shall I open a particular website to "
+                    "check, or would you like general suggestions clearly marked as unverified?"
                 )
-                if isinstance(response.content, str):
-                    response.content = response.content + nudge
-                print(f"[StaleRecovery] Injected nudge after {stale_count} stale iterations")
+
+            if stale_count == 2:
+                # Detection only — do NOT append a nudge to response.content. This turn has no
+                # tool calls, so should_continue() ends the graph and response.content becomes the
+                # user-facing answer (and TTS input); appending text here leaked it into the reply.
+                print(f"[StaleRecovery] Agent produced no tool call for {stale_count} consecutive turns")
                      
         with open(r"c:\Users\Rudra\holo-core-nexus\backend\data\graph_debug.log", "a", encoding="utf-8") as f:
             f.write(f"Response: {response}\n")
@@ -977,7 +1058,7 @@ def build_master_graph():
 
         if confidence < MIN_TOOL_CONFIDENCE:
             blocked_reason = reason
-        elif seen_count >= (2 if name == "browser_observe" else 1):
+        elif seen_count >= (2 if name in _RETRYABLE_TOOLS else 1):
             blocked_reason = "repeated_tool_call_without_progress"
 
         event_payload = {

@@ -17,6 +17,7 @@ Workflow:
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -25,7 +26,7 @@ import httpx
 
 # ── Ollama Config (mirrors llm_service.py) ────────────────
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_CHAT_MODEL = "qwen2.5:3b"
+OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 
 
 # ── Workflow State ────────────────────────────────────────
@@ -424,5 +425,5 @@ def handle_disambiguation_response(state: WASendState, user_response: str) -> WA
 
     # Couldn't resolve
     state.status = "error"
-    state.error = f"I couldn't determine which contact you meant, sir. Please try again with a more specific name."
+    state.error = "I couldn't determine which contact you meant, sir. Please try again with a more specific name."
     return state

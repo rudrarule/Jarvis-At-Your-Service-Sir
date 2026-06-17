@@ -100,6 +100,19 @@ function registerEvents(sock, saveCreds) {
 
   // ── New Messages ────────────────────────────────────────
   sock.ev.on("messages.upsert", (upsert) => {
+    // First pass: detect the user's own outgoing replies (across ALL upsert
+    // types, including "append" for messages sent from the phone) so the
+    // unanswered auto-responder timer for that chat is reset immediately.
+    for (const msg of upsert.messages) {
+      if (
+        msg.key.fromMe &&
+        msg.key.remoteJid &&
+        msg.key.remoteJid !== "status@broadcast"
+      ) {
+        store.markReplied(msg.key.remoteJid);
+      }
+    }
+
     if (upsert.type !== "notify") return; // Ignore history syncs
 
     for (const msg of upsert.messages) {
@@ -222,4 +235,77 @@ async function handleMissedCallAutoReply(sock, call) {
   }
 }
 
-module.exports = { registerEvents };
+// ─────────────────────────────────────────────────────────
+//  DELAYED AUTO-RESPONDER (unanswered personal messages)
+// ─────────────────────────────────────────────────────────
+
+let _unansweredSweeper = null;
+
+/**
+ * Run a single sweep: for every personal chat that has had an incoming message
+ * unanswered for >= the configured delay, send the professional holding reply
+ * (rate-limited via the shared auto_replies cooldown table). Group chats are
+ * never included because the store only tracks pending replies for 1:1 chats.
+ *
+ * @param {Function} getSocket — returns the current socket (may be null)
+ */
+async function sweepUnansweredReplies(getSocket) {
+  if (!config.unansweredReplyEnabled) return;
+
+  const sock = getSocket();
+  if (!sock || store.getConnectionState().status !== "connected") return;
+
+  const thresholdMs = config.unansweredReplyDelayHours * 60 * 60 * 1000;
+  const pending = store.getPendingPersonalReplies(thresholdMs);
+
+  for (const chat of pending) {
+    const jid = chat.chat_id;
+
+    // Defensive: never message groups.
+    if (jid.endsWith("@g.us")) continue;
+
+    // Rate limit — don't spam the same person within the cooldown window.
+    if (!db.canAutoReply(jid)) continue;
+
+    try {
+      await sock.sendMessage(jid, { text: config.unansweredReplyMessage });
+      db.recordAutoReply(jid, config.unansweredReplyMessage);
+      const mins = Math.round(chat.waiting_ms / 60000);
+      console.log(
+        `[AUTO-RESPOND] ✓ Holding reply sent to ${jid.split("@")[0]} ` +
+          `(unanswered ${mins}m)`
+      );
+    } catch (err) {
+      console.error(
+        `[AUTO-RESPOND] ✗ Failed to reply to ${jid.split("@")[0]}:`,
+        err.message
+      );
+    }
+  }
+}
+
+/**
+ * Start the periodic unanswered-reply sweeper. Safe to call once at startup.
+ * @param {Function} getSocket — returns the current socket
+ */
+function startUnansweredSweeper(getSocket) {
+  if (_unansweredSweeper) return; // already running
+  if (!config.unansweredReplyEnabled) {
+    console.log("[AUTO-RESPOND] Delayed auto-responder disabled by config.");
+    return;
+  }
+  console.log(
+    `[AUTO-RESPOND] Sweeper active — replying to personal chats unanswered ` +
+      `for ${config.unansweredReplyDelayHours}h (checking every ` +
+      `${Math.round(config.unansweredSweepIntervalMs / 1000)}s).`
+  );
+  _unansweredSweeper = setInterval(() => {
+    sweepUnansweredReplies(getSocket).catch((err) =>
+      console.error("[AUTO-RESPOND] Sweep error:", err.message)
+    );
+  }, config.unansweredSweepIntervalMs);
+  // Don't keep the event loop alive solely for the sweeper.
+  if (_unansweredSweeper.unref) _unansweredSweeper.unref();
+}
+
+module.exports = { registerEvents, startUnansweredSweeper };

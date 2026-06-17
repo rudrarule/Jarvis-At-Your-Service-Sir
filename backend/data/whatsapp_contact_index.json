@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-07T20:09:05.532611+00:00",
+  "updated_at": "2026-06-13T17:34:19.466165+00:00",
   "aliases": {
     "mom": [
       "mom",
@@ -4460,18 +4460,6 @@
         "score": 1.0
       }
     ],
-    "vinitaaunty": [
-      {
-        "chat_id": "919873921326@s.whatsapp.net",
-        "jid": "919873921326@s.whatsapp.net",
-        "chat_name": "Vinita Aunty",
-        "display_name": "Vinita Aunty",
-        "is_group": false,
-        "matched_on": "Vinita Aunty",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "vinita aunty": [
       {
         "chat_id": "919873921326@s.whatsapp.net",
@@ -4484,14 +4472,14 @@
         "score": 1.0
       }
     ],
-    "jindalsir": [
+    "vinitaaunty": [
       {
-        "chat_id": "918130270089@s.whatsapp.net",
-        "jid": "918130270089@s.whatsapp.net",
-        "chat_name": "Jindal Sir",
-        "display_name": "Jindal Sir",
+        "chat_id": "919873921326@s.whatsapp.net",
+        "jid": "919873921326@s.whatsapp.net",
+        "chat_name": "Vinita Aunty",
+        "display_name": "Vinita Aunty",
         "is_group": false,
-        "matched_on": "Jindal Sir",
+        "matched_on": "Vinita Aunty",
         "match_type": "name",
         "score": 1.0
       }
@@ -4508,7 +4496,19 @@
         "score": 1.0
       }
     ],
-    "molly bhatnagar": [
+    "jindalsir": [
+      {
+        "chat_id": "918130270089@s.whatsapp.net",
+        "jid": "918130270089@s.whatsapp.net",
+        "chat_name": "Jindal Sir",
+        "display_name": "Jindal Sir",
+        "is_group": false,
+        "matched_on": "Jindal Sir",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "mollybhatnagar": [
       {
         "chat_id": "15302191485@s.whatsapp.net",
         "jid": "15302191485@s.whatsapp.net",
@@ -4520,7 +4520,7 @@
         "score": 1.0
       }
     ],
-    "mollybhatnagar": [
+    "molly bhatnagar": [
       {
         "chat_id": "15302191485@s.whatsapp.net",
         "jid": "15302191485@s.whatsapp.net",
@@ -4604,7 +4604,7 @@
         "score": 1.0
       }
     ],
-    "vinaydriver": [
+    "vinay driver": [
       {
         "chat_id": "919650379543@s.whatsapp.net",
         "jid": "919650379543@s.whatsapp.net",
@@ -4616,7 +4616,7 @@
         "score": 1.0
       }
     ],
-    "vinay driver": [
+    "vinaydriver": [
       {
         "chat_id": "919650379543@s.whatsapp.net",
         "jid": "919650379543@s.whatsapp.net",
@@ -4652,7 +4652,7 @@
         "score": 1.0
       }
     ],
-    "dominikpizza": [
+    "dominik pizza": [
       {
         "chat_id": "917617411311@s.whatsapp.net",
         "jid": "917617411311@s.whatsapp.net",
@@ -4664,7 +4664,7 @@
         "score": 1.0
       }
     ],
-    "dominik pizza": [
+    "dominikpizza": [
       {
         "chat_id": "917617411311@s.whatsapp.net",
         "jid": "917617411311@s.whatsapp.net",
@@ -4700,7 +4700,7 @@
         "score": 1.0
       }
     ],
-    "aditgl": [
+    "adit gl": [
       {
         "chat_id": "919897556363@s.whatsapp.net",
         "jid": "919897556363@s.whatsapp.net",
@@ -4712,7 +4712,7 @@
         "score": 1.0
       }
     ],
-    "adit gl": [
+    "aditgl": [
       {
         "chat_id": "919897556363@s.whatsapp.net",
         "jid": "919897556363@s.whatsapp.net",
@@ -4868,7 +4868,7 @@
         "score": 1.0
       }
     ],
-    "ankit negi sir": [
+    "ankitnegisir": [
       {
         "chat_id": "916396723887@s.whatsapp.net",
         "jid": "916396723887@s.whatsapp.net",
@@ -4880,7 +4880,7 @@
         "score": 1.0
       }
     ],
-    "ankitnegisir": [
+    "ankit negi sir": [
       {
         "chat_id": "916396723887@s.whatsapp.net",
         "jid": "916396723887@s.whatsapp.net",
@@ -4940,7 +4940,7 @@
         "score": 1.0
       }
     ],
-    "ps5 rent games": [
+    "ps5rentgames": [
       {
         "chat_id": "916294471810@s.whatsapp.net",
         "jid": "916294471810@s.whatsapp.net",
@@ -4952,7 +4952,7 @@
         "score": 1.0
       }
     ],
-    "ps5rentgames": [
+    "ps5 rent games": [
       {
         "chat_id": "916294471810@s.whatsapp.net",
         "jid": "916294471810@s.whatsapp.net",
@@ -4988,7 +4988,7 @@
         "score": 1.0
       }
     ],
-    "swamitrab3ccvt": [
+    "swamitra b3 ccvt": [
       {
         "chat_id": "919939868366@s.whatsapp.net",
         "jid": "919939868366@s.whatsapp.net",
@@ -5000,7 +5000,7 @@
         "score": 1.0
       }
     ],
-    "swamitra b3 ccvt": [
+    "swamitrab3ccvt": [
       {
         "chat_id": "919939868366@s.whatsapp.net",
         "jid": "919939868366@s.whatsapp.net",
@@ -5024,7 +5024,7 @@
         "score": 1.0
       }
     ],
-    "jio fibre plan": [
+    "jiofibreplan": [
       {
         "chat_id": "919599750015@s.whatsapp.net",
         "jid": "919599750015@s.whatsapp.net",
@@ -5036,7 +5036,7 @@
         "score": 1.0
       }
     ],
-    "jiofibreplan": [
+    "jio fibre plan": [
       {
         "chat_id": "919599750015@s.whatsapp.net",
         "jid": "919599750015@s.whatsapp.net",
@@ -5060,7 +5060,7 @@
         "score": 1.0
       }
     ],
-    "adityachaturvedi": [
+    "aditya chaturvedi": [
       {
         "chat_id": "919560516490@s.whatsapp.net",
         "jid": "919560516490@s.whatsapp.net",
@@ -5072,7 +5072,7 @@
         "score": 1.0
       }
     ],
-    "aditya chaturvedi": [
+    "adityachaturvedi": [
       {
         "chat_id": "919560516490@s.whatsapp.net",
         "jid": "919560516490@s.whatsapp.net",
@@ -5108,7 +5108,7 @@
         "score": 1.0
       }
     ],
-    "tntcafe": [
+    "tnt cafe": [
       {
         "chat_id": "916239831553@s.whatsapp.net",
         "jid": "916239831553@s.whatsapp.net",
@@ -5130,7 +5130,7 @@
         "score": 1.0
       }
     ],
-    "tnt cafe": [
+    "tntcafe": [
       {
         "chat_id": "916239831553@s.whatsapp.net",
         "jid": "916239831553@s.whatsapp.net",
@@ -5176,18 +5176,6 @@
         "score": 1.0
       }
     ],
-    "sanidhya singh gaur": [
-      {
-        "chat_id": "918982125682@s.whatsapp.net",
-        "jid": "918982125682@s.whatsapp.net",
-        "chat_name": "Sanidhya Singh Gaur",
-        "display_name": "Sanidhya Singh Gaur",
-        "is_group": false,
-        "matched_on": "Sanidhya Singh Gaur",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "sanidhyasinghgaur": [
       {
         "chat_id": "918982125682@s.whatsapp.net",
@@ -5200,7 +5188,19 @@
         "score": 1.0
       }
     ],
-    "dhruv gl": [
+    "sanidhya singh gaur": [
+      {
+        "chat_id": "918982125682@s.whatsapp.net",
+        "jid": "918982125682@s.whatsapp.net",
+        "chat_name": "Sanidhya Singh Gaur",
+        "display_name": "Sanidhya Singh Gaur",
+        "is_group": false,
+        "matched_on": "Sanidhya Singh Gaur",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "dhruvgl": [
       {
         "chat_id": "917417977662@s.whatsapp.net",
         "jid": "917417977662@s.whatsapp.net",
@@ -5212,7 +5212,7 @@
         "score": 1.0
       }
     ],
-    "dhruvgl": [
+    "dhruv gl": [
       {
         "chat_id": "917417977662@s.whatsapp.net",
         "jid": "917417977662@s.whatsapp.net",
@@ -5320,18 +5320,6 @@
         "score": 1.0
       }
     ],
-    "milind khandori": [
-      {
-        "chat_id": "917466014795@s.whatsapp.net",
-        "jid": "917466014795@s.whatsapp.net",
-        "chat_name": "Milind Khandori",
-        "display_name": "Milind Khandori",
-        "is_group": false,
-        "matched_on": "Milind Khandori",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "milindkhandori": [
       {
         "chat_id": "917466014795@s.whatsapp.net",
@@ -5344,7 +5332,19 @@
         "score": 1.0
       }
     ],
-    "rashmipnboldfbd": [
+    "milind khandori": [
+      {
+        "chat_id": "917466014795@s.whatsapp.net",
+        "jid": "917466014795@s.whatsapp.net",
+        "chat_name": "Milind Khandori",
+        "display_name": "Milind Khandori",
+        "is_group": false,
+        "matched_on": "Milind Khandori",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "rashmi pnb old fbd": [
       {
         "chat_id": "918800900344@s.whatsapp.net",
         "jid": "918800900344@s.whatsapp.net",
@@ -5356,7 +5356,7 @@
         "score": 1.0
       }
     ],
-    "rashmi pnb old fbd": [
+    "rashmipnboldfbd": [
       {
         "chat_id": "918800900344@s.whatsapp.net",
         "jid": "918800900344@s.whatsapp.net",
@@ -5402,7 +5402,7 @@
         "score": 1.0
       }
     ],
-    "kake ayush meerut": [
+    "kakeayushmeerut": [
       {
         "chat_id": "918923510170@s.whatsapp.net",
         "jid": "918923510170@s.whatsapp.net",
@@ -5414,7 +5414,7 @@
         "score": 1.0
       }
     ],
-    "kakeayushmeerut": [
+    "kake ayush meerut": [
       {
         "chat_id": "918923510170@s.whatsapp.net",
         "jid": "918923510170@s.whatsapp.net",
@@ -5618,7 +5618,7 @@
         "score": 1.0
       }
     ],
-    "priyanshu tripathi upes": [
+    "priyanshutripathiupes": [
       {
         "chat_id": "918303296232@s.whatsapp.net",
         "jid": "918303296232@s.whatsapp.net",
@@ -5630,7 +5630,7 @@
         "score": 1.0
       }
     ],
-    "priyanshutripathiupes": [
+    "priyanshu tripathi upes": [
       {
         "chat_id": "918303296232@s.whatsapp.net",
         "jid": "918303296232@s.whatsapp.net",
@@ -5724,7 +5724,7 @@
         "score": 1.0
       }
     ],
-    "deepshikhaupeswhatsappno": [
+    "deepshikha upes whatsapp no": [
       {
         "chat_id": "919997713306@s.whatsapp.net",
         "jid": "919997713306@s.whatsapp.net",
@@ -5736,7 +5736,7 @@
         "score": 1.0
       }
     ],
-    "deepshikha upes whatsapp no": [
+    "deepshikhaupeswhatsappno": [
       {
         "chat_id": "919997713306@s.whatsapp.net",
         "jid": "919997713306@s.whatsapp.net",
@@ -5866,18 +5866,6 @@
         "score": 1.0
       }
     ],
-    "satwika maam gl": [
-      {
-        "chat_id": "917032782986@s.whatsapp.net",
-        "jid": "917032782986@s.whatsapp.net",
-        "chat_name": "Satwika Maam Gl",
-        "display_name": "Satwika Maam Gl",
-        "is_group": false,
-        "matched_on": "Satwika Maam Gl",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "satwikamaamgl": [
       {
         "chat_id": "917032782986@s.whatsapp.net",
@@ -5890,14 +5878,14 @@
         "score": 1.0
       }
     ],
-    "prateek internet": [
+    "satwika maam gl": [
       {
-        "chat_id": "917500800062@s.whatsapp.net",
-        "jid": "917500800062@s.whatsapp.net",
-        "chat_name": "Prateek Internet",
-        "display_name": "Prateek Internet",
+        "chat_id": "917032782986@s.whatsapp.net",
+        "jid": "917032782986@s.whatsapp.net",
+        "chat_name": "Satwika Maam Gl",
+        "display_name": "Satwika Maam Gl",
         "is_group": false,
-        "matched_on": "Prateek Internet",
+        "matched_on": "Satwika Maam Gl",
         "match_type": "name",
         "score": 1.0
       }
@@ -5914,7 +5902,19 @@
         "score": 1.0
       }
     ],
-    "ajiteshb3ccvt": [
+    "prateek internet": [
+      {
+        "chat_id": "917500800062@s.whatsapp.net",
+        "jid": "917500800062@s.whatsapp.net",
+        "chat_name": "Prateek Internet",
+        "display_name": "Prateek Internet",
+        "is_group": false,
+        "matched_on": "Prateek Internet",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "ajitesh b3 ccvt": [
       {
         "chat_id": "919015415245@s.whatsapp.net",
         "jid": "919015415245@s.whatsapp.net",
@@ -5926,7 +5926,7 @@
         "score": 1.0
       }
     ],
-    "ajitesh b3 ccvt": [
+    "ajiteshb3ccvt": [
       {
         "chat_id": "919015415245@s.whatsapp.net",
         "jid": "919015415245@s.whatsapp.net",
@@ -5962,7 +5962,7 @@
         "score": 1.0
       }
     ],
-    "roohi sille cc": [
+    "roohisillecc": [
       {
         "chat_id": "917895329284@s.whatsapp.net",
         "jid": "917895329284@s.whatsapp.net",
@@ -5974,7 +5974,7 @@
         "score": 1.0
       }
     ],
-    "roohisillecc": [
+    "roohi sille cc": [
       {
         "chat_id": "917895329284@s.whatsapp.net",
         "jid": "917895329284@s.whatsapp.net",
@@ -6010,18 +6010,6 @@
         "score": 1.0
       }
     ],
-    "siddhantkhanna": [
-      {
-        "chat_id": "918882608237@s.whatsapp.net",
-        "jid": "918882608237@s.whatsapp.net",
-        "chat_name": "Siddhant Khanna",
-        "display_name": "Siddhant Khanna",
-        "is_group": false,
-        "matched_on": "Siddhant Khanna",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "siddhant khanna": [
       {
         "chat_id": "918882608237@s.whatsapp.net",
@@ -6034,14 +6022,14 @@
         "score": 1.0
       }
     ],
-    "healthfarm": [
+    "siddhantkhanna": [
       {
-        "chat_id": "917696959438@s.whatsapp.net",
-        "jid": "917696959438@s.whatsapp.net",
-        "chat_name": "Health Farm",
-        "display_name": "Health Farm",
+        "chat_id": "918882608237@s.whatsapp.net",
+        "jid": "918882608237@s.whatsapp.net",
+        "chat_name": "Siddhant Khanna",
+        "display_name": "Siddhant Khanna",
         "is_group": false,
-        "matched_on": "Health Farm",
+        "matched_on": "Siddhant Khanna",
         "match_type": "name",
         "score": 1.0
       }
@@ -6058,14 +6046,14 @@
         "score": 1.0
       }
     ],
-    "rentride": [
+    "healthfarm": [
       {
-        "chat_id": "919818600165@s.whatsapp.net",
-        "jid": "919818600165@s.whatsapp.net",
-        "chat_name": "Rent & Ride",
-        "display_name": "Rent & Ride",
+        "chat_id": "917696959438@s.whatsapp.net",
+        "jid": "917696959438@s.whatsapp.net",
+        "chat_name": "Health Farm",
+        "display_name": "Health Farm",
         "is_group": false,
-        "matched_on": "Rent & Ride",
+        "matched_on": "Health Farm",
         "match_type": "name",
         "score": 1.0
       }
@@ -6082,7 +6070,19 @@
         "score": 1.0
       }
     ],
-    "sourabhbhaiyaindecampus": [
+    "rentride": [
+      {
+        "chat_id": "919818600165@s.whatsapp.net",
+        "jid": "919818600165@s.whatsapp.net",
+        "chat_name": "Rent & Ride",
+        "display_name": "Rent & Ride",
+        "is_group": false,
+        "matched_on": "Rent & Ride",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "sourabh bhaiya indecampus": [
       {
         "chat_id": "917068190044@s.whatsapp.net",
         "jid": "917068190044@s.whatsapp.net",
@@ -6104,7 +6104,7 @@
         "score": 1.0
       }
     ],
-    "sourabh bhaiya indecampus": [
+    "sourabhbhaiyaindecampus": [
       {
         "chat_id": "917068190044@s.whatsapp.net",
         "jid": "917068190044@s.whatsapp.net",
@@ -6174,18 +6174,6 @@
         "score": 1.0
       }
     ],
-    "shubhamyadav": [
-      {
-        "chat_id": "918306919559@s.whatsapp.net",
-        "jid": "918306919559@s.whatsapp.net",
-        "chat_name": "Shubham Yadav",
-        "display_name": "Shubham Yadav",
-        "is_group": false,
-        "matched_on": "Shubham Yadav",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "shubham yadav": [
       {
         "chat_id": "918306919559@s.whatsapp.net",
@@ -6198,7 +6186,19 @@
         "score": 1.0
       }
     ],
-    "nitikamaam": [
+    "shubhamyadav": [
+      {
+        "chat_id": "918306919559@s.whatsapp.net",
+        "jid": "918306919559@s.whatsapp.net",
+        "chat_name": "Shubham Yadav",
+        "display_name": "Shubham Yadav",
+        "is_group": false,
+        "matched_on": "Shubham Yadav",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "nitika maam": [
       {
         "chat_id": "917651908979@s.whatsapp.net",
         "jid": "917651908979@s.whatsapp.net",
@@ -6210,7 +6210,7 @@
         "score": 1.0
       }
     ],
-    "nitika maam": [
+    "nitikamaam": [
       {
         "chat_id": "917651908979@s.whatsapp.net",
         "jid": "917651908979@s.whatsapp.net",
@@ -6330,18 +6330,6 @@
         "score": 1.0
       }
     ],
-    "monicawhtspwedding": [
-      {
-        "chat_id": "919810317821@s.whatsapp.net",
-        "jid": "919810317821@s.whatsapp.net",
-        "chat_name": "Monica Whtsp Wedding",
-        "display_name": "Monica Whtsp Wedding",
-        "is_group": false,
-        "matched_on": "Monica Whtsp Wedding",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "monica whtsp wedding": [
       {
         "chat_id": "919810317821@s.whatsapp.net",
@@ -6354,7 +6342,19 @@
         "score": 1.0
       }
     ],
-    "ashish singh": [
+    "monicawhtspwedding": [
+      {
+        "chat_id": "919810317821@s.whatsapp.net",
+        "jid": "919810317821@s.whatsapp.net",
+        "chat_name": "Monica Whtsp Wedding",
+        "display_name": "Monica Whtsp Wedding",
+        "is_group": false,
+        "matched_on": "Monica Whtsp Wedding",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "ashishsingh": [
       {
         "chat_id": "918595622129@s.whatsapp.net",
         "jid": "918595622129@s.whatsapp.net",
@@ -6366,7 +6366,7 @@
         "score": 1.0
       }
     ],
-    "ashishsingh": [
+    "ashish singh": [
       {
         "chat_id": "918595622129@s.whatsapp.net",
         "jid": "918595622129@s.whatsapp.net",
@@ -6414,7 +6414,7 @@
         "score": 1.0
       }
     ],
-    "lovelybhaiya": [
+    "lovely bhaiya": [
       {
         "chat_id": "918285704012@s.whatsapp.net",
         "jid": "918285704012@s.whatsapp.net",
@@ -6426,7 +6426,7 @@
         "score": 1.0
       }
     ],
-    "lovely bhaiya": [
+    "lovelybhaiya": [
       {
         "chat_id": "918285704012@s.whatsapp.net",
         "jid": "918285704012@s.whatsapp.net",
@@ -6462,7 +6462,7 @@
         "score": 1.0
       }
     ],
-    "chopra ji faridabad": [
+    "choprajifaridabad": [
       {
         "chat_id": "919818404937@s.whatsapp.net",
         "jid": "919818404937@s.whatsapp.net",
@@ -6474,7 +6474,7 @@
         "score": 1.0
       }
     ],
-    "choprajifaridabad": [
+    "chopra ji faridabad": [
       {
         "chat_id": "919818404937@s.whatsapp.net",
         "jid": "919818404937@s.whatsapp.net",
@@ -6498,7 +6498,7 @@
         "score": 1.0
       }
     ],
-    "sound complex": [
+    "soundcomplex": [
       {
         "chat_id": "919873343629@s.whatsapp.net",
         "jid": "919873343629@s.whatsapp.net",
@@ -6510,7 +6510,7 @@
         "score": 1.0
       }
     ],
-    "soundcomplex": [
+    "sound complex": [
       {
         "chat_id": "919873343629@s.whatsapp.net",
         "jid": "919873343629@s.whatsapp.net",
@@ -6570,7 +6570,7 @@
         "score": 1.0
       }
     ],
-    "vedu frnd": [
+    "vedufrnd": [
       {
         "chat_id": "919873163090@s.whatsapp.net",
         "jid": "919873163090@s.whatsapp.net",
@@ -6582,7 +6582,7 @@
         "score": 1.0
       }
     ],
-    "vedufrnd": [
+    "vedu frnd": [
       {
         "chat_id": "919873163090@s.whatsapp.net",
         "jid": "919873163090@s.whatsapp.net",
@@ -6618,7 +6618,7 @@
         "score": 1.0
       }
     ],
-    "ashokuncle": [
+    "ashok uncle": [
       {
         "chat_id": "919234569947@s.whatsapp.net",
         "jid": "919234569947@s.whatsapp.net",
@@ -6630,7 +6630,7 @@
         "score": 1.0
       }
     ],
-    "ashok uncle": [
+    "ashokuncle": [
       {
         "chat_id": "919234569947@s.whatsapp.net",
         "jid": "919234569947@s.whatsapp.net",
@@ -6666,7 +6666,7 @@
         "score": 1.0
       }
     ],
-    "sakshi mausi": [
+    "sakshimausi": [
       {
         "chat_id": "919711788461@s.whatsapp.net",
         "jid": "919711788461@s.whatsapp.net",
@@ -6678,7 +6678,7 @@
         "score": 1.0
       }
     ],
-    "sakshimausi": [
+    "sakshi mausi": [
       {
         "chat_id": "919711788461@s.whatsapp.net",
         "jid": "919711788461@s.whatsapp.net",
@@ -6714,7 +6714,7 @@
         "score": 1.0
       }
     ],
-    "megahertzwifi": [
+    "mega hertz wifi": [
       {
         "chat_id": "918126996996@s.whatsapp.net",
         "jid": "918126996996@s.whatsapp.net",
@@ -6726,7 +6726,7 @@
         "score": 1.0
       }
     ],
-    "mega hertz wifi": [
+    "megahertzwifi": [
       {
         "chat_id": "918126996996@s.whatsapp.net",
         "jid": "918126996996@s.whatsapp.net",
@@ -6762,18 +6762,6 @@
         "score": 1.0
       }
     ],
-    "ishaanlens": [
-      {
-        "chat_id": "918800000910@s.whatsapp.net",
-        "jid": "918800000910@s.whatsapp.net",
-        "chat_name": "Ishaan Lens",
-        "display_name": "Ishaan Lens",
-        "is_group": false,
-        "matched_on": "Ishaan Lens",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "ishaan lens": [
       {
         "chat_id": "918800000910@s.whatsapp.net",
@@ -6786,7 +6774,19 @@
         "score": 1.0
       }
     ],
-    "anuj sir gl": [
+    "ishaanlens": [
+      {
+        "chat_id": "918800000910@s.whatsapp.net",
+        "jid": "918800000910@s.whatsapp.net",
+        "chat_name": "Ishaan Lens",
+        "display_name": "Ishaan Lens",
+        "is_group": false,
+        "matched_on": "Ishaan Lens",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "anujsirgl": [
       {
         "chat_id": "918279796733@s.whatsapp.net",
         "jid": "918279796733@s.whatsapp.net",
@@ -6798,7 +6798,7 @@
         "score": 1.0
       }
     ],
-    "anujsirgl": [
+    "anuj sir gl": [
       {
         "chat_id": "918279796733@s.whatsapp.net",
         "jid": "918279796733@s.whatsapp.net",
@@ -6834,18 +6834,6 @@
         "score": 1.0
       }
     ],
-    "mentor sir": [
-      {
-        "chat_id": "918789355850@s.whatsapp.net",
-        "jid": "918789355850@s.whatsapp.net",
-        "chat_name": "Mentor Sir",
-        "display_name": "Mentor Sir",
-        "is_group": false,
-        "matched_on": "Mentor Sir",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "mentorsir": [
       {
         "chat_id": "918789355850@s.whatsapp.net",
@@ -6858,7 +6846,19 @@
         "score": 1.0
       }
     ],
-    "shubham courier": [
+    "mentor sir": [
+      {
+        "chat_id": "918789355850@s.whatsapp.net",
+        "jid": "918789355850@s.whatsapp.net",
+        "chat_name": "Mentor Sir",
+        "display_name": "Mentor Sir",
+        "is_group": false,
+        "matched_on": "Mentor Sir",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "shubhamcourier": [
       {
         "chat_id": "917754948047@s.whatsapp.net",
         "jid": "917754948047@s.whatsapp.net",
@@ -6870,7 +6870,7 @@
         "score": 1.0
       }
     ],
-    "shubhamcourier": [
+    "shubham courier": [
       {
         "chat_id": "917754948047@s.whatsapp.net",
         "jid": "917754948047@s.whatsapp.net",
@@ -6930,7 +6930,7 @@
         "score": 1.0
       }
     ],
-    "lakshay bansal": [
+    "lakshaybansal": [
       {
         "chat_id": "919588107104@s.whatsapp.net",
         "jid": "919588107104@s.whatsapp.net",
@@ -6942,7 +6942,7 @@
         "score": 1.0
       }
     ],
-    "lakshaybansal": [
+    "lakshay bansal": [
       {
         "chat_id": "919588107104@s.whatsapp.net",
         "jid": "919588107104@s.whatsapp.net",
@@ -6988,7 +6988,7 @@
         "score": 1.0
       }
     ],
-    "atinanantupes": [
+    "atin anant upes": [
       {
         "chat_id": "917488156949@s.whatsapp.net",
         "jid": "917488156949@s.whatsapp.net",
@@ -7000,7 +7000,7 @@
         "score": 1.0
       }
     ],
-    "atin anant upes": [
+    "atinanantupes": [
       {
         "chat_id": "917488156949@s.whatsapp.net",
         "jid": "917488156949@s.whatsapp.net",
@@ -7046,7 +7046,7 @@
         "score": 1.0
       }
     ],
-    "naseemauto": [
+    "naseem auto": [
       {
         "chat_id": "919760766787@s.whatsapp.net",
         "jid": "919760766787@s.whatsapp.net",
@@ -7058,7 +7058,7 @@
         "score": 1.0
       }
     ],
-    "naseem auto": [
+    "naseemauto": [
       {
         "chat_id": "919760766787@s.whatsapp.net",
         "jid": "919760766787@s.whatsapp.net",
@@ -7082,7 +7082,7 @@
         "score": 1.0
       }
     ],
-    "vishal bhadola": [
+    "vishalbhadola": [
       {
         "chat_id": "919149312813@s.whatsapp.net",
         "jid": "919149312813@s.whatsapp.net",
@@ -7094,7 +7094,7 @@
         "score": 1.0
       }
     ],
-    "vishalbhadola": [
+    "vishal bhadola": [
       {
         "chat_id": "919149312813@s.whatsapp.net",
         "jid": "919149312813@s.whatsapp.net",
@@ -7142,7 +7142,7 @@
         "score": 1.0
       }
     ],
-    "nishant popli upes": [
+    "nishantpopliupes": [
       {
         "chat_id": "918979731978@s.whatsapp.net",
         "jid": "918979731978@s.whatsapp.net",
@@ -7154,7 +7154,7 @@
         "score": 1.0
       }
     ],
-    "nishantpopliupes": [
+    "nishant popli upes": [
       {
         "chat_id": "918979731978@s.whatsapp.net",
         "jid": "918979731978@s.whatsapp.net",
@@ -7178,7 +7178,7 @@
         "score": 1.0
       }
     ],
-    "aromadelivery": [
+    "aroma delivery": [
       {
         "chat_id": "919348431393@s.whatsapp.net",
         "jid": "919348431393@s.whatsapp.net",
@@ -7190,7 +7190,7 @@
         "score": 1.0
       }
     ],
-    "aroma delivery": [
+    "aromadelivery": [
       {
         "chat_id": "919348431393@s.whatsapp.net",
         "jid": "919348431393@s.whatsapp.net",
@@ -7354,7 +7354,7 @@
         "score": 1.0
       }
     ],
-    "vikram vineet machaan": [
+    "vikramvineetmachaan": [
       {
         "chat_id": "919557932315@s.whatsapp.net",
         "jid": "919557932315@s.whatsapp.net",
@@ -7366,7 +7366,7 @@
         "score": 1.0
       }
     ],
-    "vikramvineetmachaan": [
+    "vikram vineet machaan": [
       {
         "chat_id": "919557932315@s.whatsapp.net",
         "jid": "919557932315@s.whatsapp.net",
@@ -7390,7 +7390,7 @@
         "score": 1.0
       }
     ],
-    "azimtaxi": [
+    "azim taxi": [
       {
         "chat_id": "919690995813@s.whatsapp.net",
         "jid": "919690995813@s.whatsapp.net",
@@ -7402,7 +7402,7 @@
         "score": 1.0
       }
     ],
-    "azim taxi": [
+    "azimtaxi": [
       {
         "chat_id": "919690995813@s.whatsapp.net",
         "jid": "919690995813@s.whatsapp.net",
@@ -7474,7 +7474,7 @@
         "score": 1.0
       }
     ],
-    "mittalc3601": [
+    "mittal c3 601": [
       {
         "chat_id": "919891812921@s.whatsapp.net",
         "jid": "919891812921@s.whatsapp.net",
@@ -7486,7 +7486,7 @@
         "score": 1.0
       }
     ],
-    "mittal c3 601": [
+    "mittalc3601": [
       {
         "chat_id": "919891812921@s.whatsapp.net",
         "jid": "919891812921@s.whatsapp.net",
@@ -7556,18 +7556,6 @@
         "score": 1.0
       }
     ],
-    "abhiroopsir": [
-      {
-        "chat_id": "919759617150@s.whatsapp.net",
-        "jid": "919759617150@s.whatsapp.net",
-        "chat_name": "Abhiroop Sir",
-        "display_name": "Abhiroop Sir",
-        "is_group": false,
-        "matched_on": "Abhiroop Sir",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "abhiroop sir": [
       {
         "chat_id": "919759617150@s.whatsapp.net",
@@ -7580,7 +7568,19 @@
         "score": 1.0
       }
     ],
-    "nikhilb3ccvt": [
+    "abhiroopsir": [
+      {
+        "chat_id": "919759617150@s.whatsapp.net",
+        "jid": "919759617150@s.whatsapp.net",
+        "chat_name": "Abhiroop Sir",
+        "display_name": "Abhiroop Sir",
+        "is_group": false,
+        "matched_on": "Abhiroop Sir",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "nikhil b3 ccvt": [
       {
         "chat_id": "917849874028@s.whatsapp.net",
         "jid": "917849874028@s.whatsapp.net",
@@ -7592,7 +7592,7 @@
         "score": 1.0
       }
     ],
-    "nikhil b3 ccvt": [
+    "nikhilb3ccvt": [
       {
         "chat_id": "917849874028@s.whatsapp.net",
         "jid": "917849874028@s.whatsapp.net",
@@ -7616,18 +7616,6 @@
         "score": 1.0
       }
     ],
-    "deepankarbhaiya": [
-      {
-        "chat_id": "918586878353@s.whatsapp.net",
-        "jid": "918586878353@s.whatsapp.net",
-        "chat_name": "Deepankar Bhaiya",
-        "display_name": "Deepankar Bhaiya",
-        "is_group": false,
-        "matched_on": "Deepankar Bhaiya",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "deepankar bhaiya": [
       {
         "chat_id": "918586878353@s.whatsapp.net",
@@ -7640,7 +7628,19 @@
         "score": 1.0
       }
     ],
-    "vineet sir": [
+    "deepankarbhaiya": [
+      {
+        "chat_id": "918586878353@s.whatsapp.net",
+        "jid": "918586878353@s.whatsapp.net",
+        "chat_name": "Deepankar Bhaiya",
+        "display_name": "Deepankar Bhaiya",
+        "is_group": false,
+        "matched_on": "Deepankar Bhaiya",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "vineetsir": [
       {
         "chat_id": "919571557982@s.whatsapp.net",
         "jid": "919571557982@s.whatsapp.net",
@@ -7652,7 +7652,7 @@
         "score": 1.0
       }
     ],
-    "vineetsir": [
+    "vineet sir": [
       {
         "chat_id": "919571557982@s.whatsapp.net",
         "jid": "919571557982@s.whatsapp.net",
@@ -7676,7 +7676,7 @@
         "score": 1.0
       }
     ],
-    "suraj air": [
+    "surajair": [
       {
         "chat_id": "918941863568@s.whatsapp.net",
         "jid": "918941863568@s.whatsapp.net",
@@ -7688,7 +7688,7 @@
         "score": 1.0
       }
     ],
-    "surajair": [
+    "suraj air": [
       {
         "chat_id": "918941863568@s.whatsapp.net",
         "jid": "918941863568@s.whatsapp.net",
@@ -7724,7 +7724,7 @@
         "score": 1.0
       }
     ],
-    "ajay driver ddn": [
+    "ajaydriverddn": [
       {
         "chat_id": "919012705080@s.whatsapp.net",
         "jid": "919012705080@s.whatsapp.net",
@@ -7736,7 +7736,7 @@
         "score": 1.0
       }
     ],
-    "ajaydriverddn": [
+    "ajay driver ddn": [
       {
         "chat_id": "919012705080@s.whatsapp.net",
         "jid": "919012705080@s.whatsapp.net",
@@ -7808,18 +7808,6 @@
         "score": 1.0
       }
     ],
-    "parth phone mech": [
-      {
-        "chat_id": "919927706627@s.whatsapp.net",
-        "jid": "919927706627@s.whatsapp.net",
-        "chat_name": "Parth Phone Mech",
-        "display_name": "Parth Phone Mech",
-        "is_group": false,
-        "matched_on": "Parth Phone Mech",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "parthphonemech": [
       {
         "chat_id": "919927706627@s.whatsapp.net",
@@ -7832,14 +7820,14 @@
         "score": 1.0
       }
     ],
-    "karan bhaiya indecampus": [
+    "parth phone mech": [
       {
-        "chat_id": "918249640472@s.whatsapp.net",
-        "jid": "918249640472@s.whatsapp.net",
-        "chat_name": "KARAN Bhaiya Indecampus",
-        "display_name": "KARAN Bhaiya Indecampus",
+        "chat_id": "919927706627@s.whatsapp.net",
+        "jid": "919927706627@s.whatsapp.net",
+        "chat_name": "Parth Phone Mech",
+        "display_name": "Parth Phone Mech",
         "is_group": false,
-        "matched_on": "KARAN Bhaiya Indecampus",
+        "matched_on": "Parth Phone Mech",
         "match_type": "name",
         "score": 1.0
       }
@@ -7856,14 +7844,14 @@
         "score": 1.0
       }
     ],
-    "globalpay": [
+    "karan bhaiya indecampus": [
       {
-        "chat_id": "916289131975@s.whatsapp.net",
-        "jid": "916289131975@s.whatsapp.net",
-        "chat_name": "Global Pay",
-        "display_name": "Global Pay",
+        "chat_id": "918249640472@s.whatsapp.net",
+        "jid": "918249640472@s.whatsapp.net",
+        "chat_name": "KARAN Bhaiya Indecampus",
+        "display_name": "KARAN Bhaiya Indecampus",
         "is_group": false,
-        "matched_on": "Global Pay",
+        "matched_on": "KARAN Bhaiya Indecampus",
         "match_type": "name",
         "score": 1.0
       }
@@ -7880,14 +7868,14 @@
         "score": 1.0
       }
     ],
-    "dadikitafri": [
+    "globalpay": [
       {
-        "chat_id": "916399941945@s.whatsapp.net",
-        "jid": "916399941945@s.whatsapp.net",
-        "chat_name": "Dadi Ki Tafri",
-        "display_name": "Dadi Ki Tafri",
+        "chat_id": "916289131975@s.whatsapp.net",
+        "jid": "916289131975@s.whatsapp.net",
+        "chat_name": "Global Pay",
+        "display_name": "Global Pay",
         "is_group": false,
-        "matched_on": "Dadi Ki Tafri",
+        "matched_on": "Global Pay",
         "match_type": "name",
         "score": 1.0
       }
@@ -7904,14 +7892,14 @@
         "score": 1.0
       }
     ],
-    "ajaysir": [
+    "dadikitafri": [
       {
-        "chat_id": "917895345620@s.whatsapp.net",
-        "jid": "917895345620@s.whatsapp.net",
-        "chat_name": "Ajay Sir\ud83d\ude4f",
-        "display_name": "Ajay Sir\ud83d\ude4f",
+        "chat_id": "916399941945@s.whatsapp.net",
+        "jid": "916399941945@s.whatsapp.net",
+        "chat_name": "Dadi Ki Tafri",
+        "display_name": "Dadi Ki Tafri",
         "is_group": false,
-        "matched_on": "Ajay Sir\ud83d\ude4f",
+        "matched_on": "Dadi Ki Tafri",
         "match_type": "name",
         "score": 1.0
       }
@@ -7928,7 +7916,19 @@
         "score": 1.0
       }
     ],
-    "jio fibre": [
+    "ajaysir": [
+      {
+        "chat_id": "917895345620@s.whatsapp.net",
+        "jid": "917895345620@s.whatsapp.net",
+        "chat_name": "Ajay Sir\ud83d\ude4f",
+        "display_name": "Ajay Sir\ud83d\ude4f",
+        "is_group": false,
+        "matched_on": "Ajay Sir\ud83d\ude4f",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "jiofibre": [
       {
         "chat_id": "918882930838@s.whatsapp.net",
         "jid": "918882930838@s.whatsapp.net",
@@ -7940,7 +7940,7 @@
         "score": 1.0
       }
     ],
-    "jiofibre": [
+    "jio fibre": [
       {
         "chat_id": "918882930838@s.whatsapp.net",
         "jid": "918882930838@s.whatsapp.net",
@@ -7988,7 +7988,7 @@
         "score": 1.0
       }
     ],
-    "aadityaagarwalupes": [
+    "aaditya agarwal upes": [
       {
         "chat_id": "919792971312@s.whatsapp.net",
         "jid": "919792971312@s.whatsapp.net",
@@ -8000,7 +8000,7 @@
         "score": 1.0
       }
     ],
-    "aaditya agarwal upes": [
+    "aadityaagarwalupes": [
       {
         "chat_id": "919792971312@s.whatsapp.net",
         "jid": "919792971312@s.whatsapp.net",
@@ -8036,7 +8036,7 @@
         "score": 1.0
       }
     ],
-    "palak maam gl": [
+    "palakmaamgl": [
       {
         "chat_id": "919838431110@s.whatsapp.net",
         "jid": "919838431110@s.whatsapp.net",
@@ -8048,7 +8048,7 @@
         "score": 1.0
       }
     ],
-    "palakmaamgl": [
+    "palak maam gl": [
       {
         "chat_id": "919838431110@s.whatsapp.net",
         "jid": "919838431110@s.whatsapp.net",
@@ -8084,18 +8084,6 @@
         "score": 1.0
       }
     ],
-    "arundhutitarafdar": [
-      {
-        "chat_id": "918017603078@s.whatsapp.net",
-        "jid": "918017603078@s.whatsapp.net",
-        "chat_name": "Arundhuti Tarafdar",
-        "display_name": "Arundhuti Tarafdar",
-        "is_group": false,
-        "matched_on": "Arundhuti Tarafdar",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "arundhuti tarafdar": [
       {
         "chat_id": "918017603078@s.whatsapp.net",
@@ -8108,7 +8096,19 @@
         "score": 1.0
       }
     ],
-    "printfbd": [
+    "arundhutitarafdar": [
+      {
+        "chat_id": "918017603078@s.whatsapp.net",
+        "jid": "918017603078@s.whatsapp.net",
+        "chat_name": "Arundhuti Tarafdar",
+        "display_name": "Arundhuti Tarafdar",
+        "is_group": false,
+        "matched_on": "Arundhuti Tarafdar",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "print fbd": [
       {
         "chat_id": "917532075965@s.whatsapp.net",
         "jid": "917532075965@s.whatsapp.net",
@@ -8120,7 +8120,7 @@
         "score": 1.0
       }
     ],
-    "print fbd": [
+    "printfbd": [
       {
         "chat_id": "917532075965@s.whatsapp.net",
         "jid": "917532075965@s.whatsapp.net",
@@ -8144,18 +8144,6 @@
         "score": 1.0
       }
     ],
-    "shivambhaiyagreenview": [
-      {
-        "chat_id": "918979315268@s.whatsapp.net",
-        "jid": "918979315268@s.whatsapp.net",
-        "chat_name": "Shivam Bhaiya Green View",
-        "display_name": "Shivam Bhaiya Green View",
-        "is_group": false,
-        "matched_on": "Shivam Bhaiya Green View",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "shivam bhaiya green view": [
       {
         "chat_id": "918979315268@s.whatsapp.net",
@@ -8168,7 +8156,19 @@
         "score": 1.0
       }
     ],
-    "sanskritibharadwaj": [
+    "shivambhaiyagreenview": [
+      {
+        "chat_id": "918979315268@s.whatsapp.net",
+        "jid": "918979315268@s.whatsapp.net",
+        "chat_name": "Shivam Bhaiya Green View",
+        "display_name": "Shivam Bhaiya Green View",
+        "is_group": false,
+        "matched_on": "Shivam Bhaiya Green View",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "sanskriti bharadwaj": [
       {
         "chat_id": "917906580100@s.whatsapp.net",
         "jid": "917906580100@s.whatsapp.net",
@@ -8180,7 +8180,7 @@
         "score": 1.0
       }
     ],
-    "sanskriti bharadwaj": [
+    "sanskritibharadwaj": [
       {
         "chat_id": "917906580100@s.whatsapp.net",
         "jid": "917906580100@s.whatsapp.net",
@@ -8240,7 +8240,7 @@
         "score": 1.0
       }
     ],
-    "nishant bhaiya": [
+    "nishantbhaiya": [
       {
         "chat_id": "919398580030@s.whatsapp.net",
         "jid": "919398580030@s.whatsapp.net",
@@ -8252,7 +8252,7 @@
         "score": 1.0
       }
     ],
-    "nishantbhaiya": [
+    "nishant bhaiya": [
       {
         "chat_id": "919398580030@s.whatsapp.net",
         "jid": "919398580030@s.whatsapp.net",
@@ -8276,18 +8276,6 @@
         "score": 1.0
       }
     ],
-    "priti maam gl": [
-      {
-        "chat_id": "918700367613@s.whatsapp.net",
-        "jid": "918700367613@s.whatsapp.net",
-        "chat_name": "Priti Maam Gl",
-        "display_name": "Priti Maam Gl",
-        "is_group": false,
-        "matched_on": "Priti Maam Gl",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "pritimaamgl": [
       {
         "chat_id": "918700367613@s.whatsapp.net",
@@ -8300,7 +8288,19 @@
         "score": 1.0
       }
     ],
-    "adeshmeenudihusband": [
+    "priti maam gl": [
+      {
+        "chat_id": "918700367613@s.whatsapp.net",
+        "jid": "918700367613@s.whatsapp.net",
+        "chat_name": "Priti Maam Gl",
+        "display_name": "Priti Maam Gl",
+        "is_group": false,
+        "matched_on": "Priti Maam Gl",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "adesh meenu di husband": [
       {
         "chat_id": "919540734767@s.whatsapp.net",
         "jid": "919540734767@s.whatsapp.net",
@@ -8312,7 +8312,7 @@
         "score": 1.0
       }
     ],
-    "adesh meenu di husband": [
+    "adeshmeenudihusband": [
       {
         "chat_id": "919540734767@s.whatsapp.net",
         "jid": "919540734767@s.whatsapp.net",
@@ -8360,7 +8360,7 @@
         "score": 1.0
       }
     ],
-    "manav bhaiya": [
+    "manavbhaiya": [
       {
         "chat_id": "919767649789@s.whatsapp.net",
         "jid": "919767649789@s.whatsapp.net",
@@ -8372,7 +8372,7 @@
         "score": 1.0
       }
     ],
-    "manavbhaiya": [
+    "manav bhaiya": [
       {
         "chat_id": "919767649789@s.whatsapp.net",
         "jid": "919767649789@s.whatsapp.net",
@@ -8420,7 +8420,7 @@
         "score": 1.0
       }
     ],
-    "divyanshjha": [
+    "divyansh jha": [
       {
         "chat_id": "919810739995@s.whatsapp.net",
         "jid": "919810739995@s.whatsapp.net",
@@ -8432,7 +8432,7 @@
         "score": 1.0
       }
     ],
-    "divyansh jha": [
+    "divyanshjha": [
       {
         "chat_id": "919810739995@s.whatsapp.net",
         "jid": "919810739995@s.whatsapp.net",
@@ -8514,18 +8514,6 @@
         "score": 1.0
       }
     ],
-    "abhaychaudhary": [
-      {
-        "chat_id": "919997330064@s.whatsapp.net",
-        "jid": "919997330064@s.whatsapp.net",
-        "chat_name": "Abhay Chaudhary",
-        "display_name": "Abhay Chaudhary",
-        "is_group": false,
-        "matched_on": "Abhay Chaudhary",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "abhay chaudhary": [
       {
         "chat_id": "919997330064@s.whatsapp.net",
@@ -8538,7 +8526,19 @@
         "score": 1.0
       }
     ],
-    "ayushbhaiya": [
+    "abhaychaudhary": [
+      {
+        "chat_id": "919997330064@s.whatsapp.net",
+        "jid": "919997330064@s.whatsapp.net",
+        "chat_name": "Abhay Chaudhary",
+        "display_name": "Abhay Chaudhary",
+        "is_group": false,
+        "matched_on": "Abhay Chaudhary",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "ayush bhaiya": [
       {
         "chat_id": "917249922668@s.whatsapp.net",
         "jid": "917249922668@s.whatsapp.net",
@@ -8550,7 +8550,7 @@
         "score": 1.0
       }
     ],
-    "ayush bhaiya": [
+    "ayushbhaiya": [
       {
         "chat_id": "917249922668@s.whatsapp.net",
         "jid": "917249922668@s.whatsapp.net",
@@ -8706,7 +8706,7 @@
         "score": 1.0
       }
     ],
-    "ravijio": [
+    "ravi jio": [
       {
         "chat_id": "919560345856@s.whatsapp.net",
         "jid": "919560345856@s.whatsapp.net",
@@ -8718,7 +8718,7 @@
         "score": 1.0
       }
     ],
-    "ravi jio": [
+    "ravijio": [
       {
         "chat_id": "919560345856@s.whatsapp.net",
         "jid": "919560345856@s.whatsapp.net",
@@ -8766,18 +8766,6 @@
         "score": 1.0
       }
     ],
-    "adity zear ma m": [
-      {
-        "chat_id": "918894651107@s.whatsapp.net",
-        "jid": "918894651107@s.whatsapp.net",
-        "chat_name": "Adity Zear Ma'm",
-        "display_name": "Adity Zear Ma'm",
-        "is_group": false,
-        "matched_on": "Adity Zear Ma'm",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "adityzearmam": [
       {
         "chat_id": "918894651107@s.whatsapp.net",
@@ -8790,7 +8778,19 @@
         "score": 1.0
       }
     ],
-    "shrutib5": [
+    "adity zear ma m": [
+      {
+        "chat_id": "918894651107@s.whatsapp.net",
+        "jid": "918894651107@s.whatsapp.net",
+        "chat_name": "Adity Zear Ma'm",
+        "display_name": "Adity Zear Ma'm",
+        "is_group": false,
+        "matched_on": "Adity Zear Ma'm",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "shruti b5": [
       {
         "chat_id": "918604419615@s.whatsapp.net",
         "jid": "918604419615@s.whatsapp.net",
@@ -8802,7 +8802,7 @@
         "score": 1.0
       }
     ],
-    "shruti b5": [
+    "shrutib5": [
       {
         "chat_id": "918604419615@s.whatsapp.net",
         "jid": "918604419615@s.whatsapp.net",
@@ -8874,7 +8874,7 @@
         "score": 1.0
       }
     ],
-    "parth b3 ccvt": [
+    "parthb3ccvt": [
       {
         "chat_id": "916398832661@s.whatsapp.net",
         "jid": "916398832661@s.whatsapp.net",
@@ -8886,7 +8886,7 @@
         "score": 1.0
       }
     ],
-    "parthb3ccvt": [
+    "parth b3 ccvt": [
       {
         "chat_id": "916398832661@s.whatsapp.net",
         "jid": "916398832661@s.whatsapp.net",
@@ -8982,18 +8982,6 @@
         "score": 1.0
       }
     ],
-    "nexon valuation": [
-      {
-        "chat_id": "918447047121@s.whatsapp.net",
-        "jid": "918447047121@s.whatsapp.net",
-        "chat_name": "Nexon Valuation",
-        "display_name": "Nexon Valuation",
-        "is_group": false,
-        "matched_on": "Nexon Valuation",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "nexonvaluation": [
       {
         "chat_id": "918447047121@s.whatsapp.net",
@@ -9006,7 +8994,19 @@
         "score": 1.0
       }
     ],
-    "khusboo audit": [
+    "nexon valuation": [
+      {
+        "chat_id": "918447047121@s.whatsapp.net",
+        "jid": "918447047121@s.whatsapp.net",
+        "chat_name": "Nexon Valuation",
+        "display_name": "Nexon Valuation",
+        "is_group": false,
+        "matched_on": "Nexon Valuation",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "khusbooaudit": [
       {
         "chat_id": "917763806975@s.whatsapp.net",
         "jid": "917763806975@s.whatsapp.net",
@@ -9018,7 +9018,7 @@
         "score": 1.0
       }
     ],
-    "khusbooaudit": [
+    "khusboo audit": [
       {
         "chat_id": "917763806975@s.whatsapp.net",
         "jid": "917763806975@s.whatsapp.net",
@@ -9042,18 +9042,6 @@
         "score": 1.0
       }
     ],
-    "laundry ddn": [
-      {
-        "chat_id": "919897162195@s.whatsapp.net",
-        "jid": "919897162195@s.whatsapp.net",
-        "chat_name": "Laundry DDN",
-        "display_name": "Laundry DDN",
-        "is_group": false,
-        "matched_on": "Laundry DDN",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "laundryddn": [
       {
         "chat_id": "919897162195@s.whatsapp.net",
@@ -9066,14 +9054,14 @@
         "score": 1.0
       }
     ],
-    "deepansh bhai gl": [
+    "laundry ddn": [
       {
-        "chat_id": "918004868141@s.whatsapp.net",
-        "jid": "918004868141@s.whatsapp.net",
-        "chat_name": "Deepansh Bhai Gl",
-        "display_name": "Deepansh Bhai Gl",
+        "chat_id": "919897162195@s.whatsapp.net",
+        "jid": "919897162195@s.whatsapp.net",
+        "chat_name": "Laundry DDN",
+        "display_name": "Laundry DDN",
         "is_group": false,
-        "matched_on": "Deepansh Bhai Gl",
+        "matched_on": "Laundry DDN",
         "match_type": "name",
         "score": 1.0
       }
@@ -9090,7 +9078,19 @@
         "score": 1.0
       }
     ],
-    "ashmitb3ccvt": [
+    "deepansh bhai gl": [
+      {
+        "chat_id": "918004868141@s.whatsapp.net",
+        "jid": "918004868141@s.whatsapp.net",
+        "chat_name": "Deepansh Bhai Gl",
+        "display_name": "Deepansh Bhai Gl",
+        "is_group": false,
+        "matched_on": "Deepansh Bhai Gl",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "ashmit b3 ccvt": [
       {
         "chat_id": "916398980680@s.whatsapp.net",
         "jid": "916398980680@s.whatsapp.net",
@@ -9102,7 +9102,7 @@
         "score": 1.0
       }
     ],
-    "ashmit b3 ccvt": [
+    "ashmitb3ccvt": [
       {
         "chat_id": "916398980680@s.whatsapp.net",
         "jid": "916398980680@s.whatsapp.net",
@@ -9162,18 +9162,6 @@
         "score": 1.0
       }
     ],
-    "akshat goyal indecampus": [
-      {
-        "chat_id": "919911918233@s.whatsapp.net",
-        "jid": "919911918233@s.whatsapp.net",
-        "chat_name": "Akshat Goyal Indecampus",
-        "display_name": "Akshat Goyal Indecampus",
-        "is_group": false,
-        "matched_on": "Akshat Goyal Indecampus",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "akshatgoyalindecampus": [
       {
         "chat_id": "919911918233@s.whatsapp.net",
@@ -9186,7 +9174,19 @@
         "score": 1.0
       }
     ],
-    "kamran shah": [
+    "akshat goyal indecampus": [
+      {
+        "chat_id": "919911918233@s.whatsapp.net",
+        "jid": "919911918233@s.whatsapp.net",
+        "chat_name": "Akshat Goyal Indecampus",
+        "display_name": "Akshat Goyal Indecampus",
+        "is_group": false,
+        "matched_on": "Akshat Goyal Indecampus",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "kamranshah": [
       {
         "chat_id": "919860155328@s.whatsapp.net",
         "jid": "919860155328@s.whatsapp.net",
@@ -9198,7 +9198,7 @@
         "score": 1.0
       }
     ],
-    "kamranshah": [
+    "kamran shah": [
       {
         "chat_id": "919860155328@s.whatsapp.net",
         "jid": "919860155328@s.whatsapp.net",
@@ -9222,18 +9222,6 @@
         "score": 1.0
       }
     ],
-    "toypom": [
-      {
-        "chat_id": "919990730909@s.whatsapp.net",
-        "jid": "919990730909@s.whatsapp.net",
-        "chat_name": "Toy Pom",
-        "display_name": "Toy Pom",
-        "is_group": false,
-        "matched_on": "Toy Pom",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "toy pom": [
       {
         "chat_id": "919990730909@s.whatsapp.net",
@@ -9246,14 +9234,14 @@
         "score": 1.0
       }
     ],
-    "surya b3 ccvt": [
+    "toypom": [
       {
-        "chat_id": "918837834718@s.whatsapp.net",
-        "jid": "918837834718@s.whatsapp.net",
-        "chat_name": "Surya B3 CCVT",
-        "display_name": "Surya B3 CCVT",
+        "chat_id": "919990730909@s.whatsapp.net",
+        "jid": "919990730909@s.whatsapp.net",
+        "chat_name": "Toy Pom",
+        "display_name": "Toy Pom",
         "is_group": false,
-        "matched_on": "Surya B3 CCVT",
+        "matched_on": "Toy Pom",
         "match_type": "name",
         "score": 1.0
       }
@@ -9270,7 +9258,19 @@
         "score": 1.0
       }
     ],
-    "dosa adore": [
+    "surya b3 ccvt": [
+      {
+        "chat_id": "918837834718@s.whatsapp.net",
+        "jid": "918837834718@s.whatsapp.net",
+        "chat_name": "Surya B3 CCVT",
+        "display_name": "Surya B3 CCVT",
+        "is_group": false,
+        "matched_on": "Surya B3 CCVT",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "dosaadore": [
       {
         "chat_id": "919315198856@s.whatsapp.net",
         "jid": "919315198856@s.whatsapp.net",
@@ -9282,7 +9282,7 @@
         "score": 1.0
       }
     ],
-    "dosaadore": [
+    "dosa adore": [
       {
         "chat_id": "919315198856@s.whatsapp.net",
         "jid": "919315198856@s.whatsapp.net",
@@ -9318,7 +9318,7 @@
         "score": 1.0
       }
     ],
-    "photo print fbd": [
+    "photoprintfbd": [
       {
         "chat_id": "919891787208@s.whatsapp.net",
         "jid": "919891787208@s.whatsapp.net",
@@ -9330,7 +9330,7 @@
         "score": 1.0
       }
     ],
-    "photoprintfbd": [
+    "photo print fbd": [
       {
         "chat_id": "919891787208@s.whatsapp.net",
         "jid": "919891787208@s.whatsapp.net",
@@ -9366,7 +9366,7 @@
         "score": 1.0
       }
     ],
-    "shresthpandey": [
+    "shresth pandey": [
       {
         "chat_id": "919395959191@s.whatsapp.net",
         "jid": "919395959191@s.whatsapp.net",
@@ -9378,7 +9378,7 @@
         "score": 1.0
       }
     ],
-    "shresth pandey": [
+    "shresthpandey": [
       {
         "chat_id": "919395959191@s.whatsapp.net",
         "jid": "919395959191@s.whatsapp.net",
@@ -9414,7 +9414,7 @@
         "score": 1.0
       }
     ],
-    "sachinjiindecampus": [
+    "sachin ji indecampus": [
       {
         "chat_id": "919528461537@s.whatsapp.net",
         "jid": "919528461537@s.whatsapp.net",
@@ -9426,7 +9426,7 @@
         "score": 1.0
       }
     ],
-    "sachin ji indecampus": [
+    "sachinjiindecampus": [
       {
         "chat_id": "919528461537@s.whatsapp.net",
         "jid": "919528461537@s.whatsapp.net",
@@ -9510,18 +9510,6 @@
         "score": 1.0
       }
     ],
-    "mrkrisper": [
-      {
-        "chat_id": "918708551312@s.whatsapp.net",
-        "jid": "918708551312@s.whatsapp.net",
-        "chat_name": "Mr Krisper",
-        "display_name": "Mr Krisper",
-        "is_group": false,
-        "matched_on": "Mr Krisper",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "mr krisper": [
       {
         "chat_id": "918708551312@s.whatsapp.net",
@@ -9534,7 +9522,19 @@
         "score": 1.0
       }
     ],
-    "suraj kohli": [
+    "mrkrisper": [
+      {
+        "chat_id": "918708551312@s.whatsapp.net",
+        "jid": "918708551312@s.whatsapp.net",
+        "chat_name": "Mr Krisper",
+        "display_name": "Mr Krisper",
+        "is_group": false,
+        "matched_on": "Mr Krisper",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "surajkohli": [
       {
         "chat_id": "917037361416@s.whatsapp.net",
         "jid": "917037361416@s.whatsapp.net",
@@ -9546,7 +9546,7 @@
         "score": 1.0
       }
     ],
-    "surajkohli": [
+    "suraj kohli": [
       {
         "chat_id": "917037361416@s.whatsapp.net",
         "jid": "917037361416@s.whatsapp.net",
@@ -9594,7 +9594,7 @@
         "score": 1.0
       }
     ],
-    "ekunew": [
+    "eku new": [
       {
         "chat_id": "918800884487@s.whatsapp.net",
         "jid": "918800884487@s.whatsapp.net",
@@ -9606,7 +9606,7 @@
         "score": 1.0
       }
     ],
-    "eku new": [
+    "ekunew": [
       {
         "chat_id": "918800884487@s.whatsapp.net",
         "jid": "918800884487@s.whatsapp.net",
@@ -9642,7 +9642,7 @@
         "score": 1.0
       }
     ],
-    "harshsharmaupes": [
+    "harsh sharma upes": [
       {
         "chat_id": "917357337644@s.whatsapp.net",
         "jid": "917357337644@s.whatsapp.net",
@@ -9654,7 +9654,7 @@
         "score": 1.0
       }
     ],
-    "harsh sharma upes": [
+    "harshsharmaupes": [
       {
         "chat_id": "917357337644@s.whatsapp.net",
         "jid": "917357337644@s.whatsapp.net",
@@ -9714,18 +9714,6 @@
         "score": 1.0
       }
     ],
-    "domnik pizza": [
-      {
-        "chat_id": "917900688688@s.whatsapp.net",
-        "jid": "917900688688@s.whatsapp.net",
-        "chat_name": "Domnik Pizza",
-        "display_name": "Domnik Pizza",
-        "is_group": false,
-        "matched_on": "Domnik Pizza",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "domnikpizza": [
       {
         "chat_id": "917900688688@s.whatsapp.net",
@@ -9738,7 +9726,19 @@
         "score": 1.0
       }
     ],
-    "monica internship": [
+    "domnik pizza": [
+      {
+        "chat_id": "917900688688@s.whatsapp.net",
+        "jid": "917900688688@s.whatsapp.net",
+        "chat_name": "Domnik Pizza",
+        "display_name": "Domnik Pizza",
+        "is_group": false,
+        "matched_on": "Domnik Pizza",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "monicainternship": [
       {
         "chat_id": "918373919930@s.whatsapp.net",
         "jid": "918373919930@s.whatsapp.net",
@@ -9750,7 +9750,7 @@
         "score": 1.0
       }
     ],
-    "monicainternship": [
+    "monica internship": [
       {
         "chat_id": "918373919930@s.whatsapp.net",
         "jid": "918373919930@s.whatsapp.net",
@@ -9858,7 +9858,7 @@
         "score": 1.0
       }
     ],
-    "litchitrainer": [
+    "litchi trainer": [
       {
         "chat_id": "918445094040@s.whatsapp.net",
         "jid": "918445094040@s.whatsapp.net",
@@ -9870,7 +9870,7 @@
         "score": 1.0
       }
     ],
-    "litchi trainer": [
+    "litchitrainer": [
       {
         "chat_id": "918445094040@s.whatsapp.net",
         "jid": "918445094040@s.whatsapp.net",
@@ -9894,7 +9894,7 @@
         "score": 1.0
       }
     ],
-    "priyanshudevindecampus": [
+    "priyanshu dev indecampus": [
       {
         "chat_id": "919350177809@s.whatsapp.net",
         "jid": "919350177809@s.whatsapp.net",
@@ -9906,7 +9906,7 @@
         "score": 1.0
       }
     ],
-    "priyanshu dev indecampus": [
+    "priyanshudevindecampus": [
       {
         "chat_id": "919350177809@s.whatsapp.net",
         "jid": "919350177809@s.whatsapp.net",
@@ -9930,18 +9930,6 @@
         "score": 1.0
       }
     ],
-    "deepshikhaarora": [
-      {
-        "chat_id": "919149027996@s.whatsapp.net",
-        "jid": "919149027996@s.whatsapp.net",
-        "chat_name": "Deepshikha Arora",
-        "display_name": "Deepshikha Arora",
-        "is_group": false,
-        "matched_on": "Deepshikha Arora",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "deepshikha arora": [
       {
         "chat_id": "919149027996@s.whatsapp.net",
@@ -9954,7 +9942,19 @@
         "score": 1.0
       }
     ],
-    "sirguliaqadir": [
+    "deepshikhaarora": [
+      {
+        "chat_id": "919149027996@s.whatsapp.net",
+        "jid": "919149027996@s.whatsapp.net",
+        "chat_name": "Deepshikha Arora",
+        "display_name": "Deepshikha Arora",
+        "is_group": false,
+        "matched_on": "Deepshikha Arora",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "sir gulia qadir": [
       {
         "chat_id": "919971547367@s.whatsapp.net",
         "jid": "919971547367@s.whatsapp.net",
@@ -9966,7 +9966,7 @@
         "score": 1.0
       }
     ],
-    "sir gulia qadir": [
+    "sirguliaqadir": [
       {
         "chat_id": "919971547367@s.whatsapp.net",
         "jid": "919971547367@s.whatsapp.net",
@@ -10098,7 +10098,7 @@
         "score": 1.0
       }
     ],
-    "sanjay sir upes": [
+    "sanjaysirupes": [
       {
         "chat_id": "919838358556@s.whatsapp.net",
         "jid": "919838358556@s.whatsapp.net",
@@ -10110,7 +10110,7 @@
         "score": 1.0
       }
     ],
-    "sanjaysirupes": [
+    "sanjay sir upes": [
       {
         "chat_id": "919838358556@s.whatsapp.net",
         "jid": "919838358556@s.whatsapp.net",
@@ -10170,7 +10170,7 @@
         "score": 1.0
       }
     ],
-    "momos near me": [
+    "momosnearme": [
       {
         "chat_id": "919911126078@s.whatsapp.net",
         "jid": "919911126078@s.whatsapp.net",
@@ -10182,7 +10182,7 @@
         "score": 1.0
       }
     ],
-    "momosnearme": [
+    "momos near me": [
       {
         "chat_id": "919911126078@s.whatsapp.net",
         "jid": "919911126078@s.whatsapp.net",
@@ -10254,7 +10254,7 @@
         "score": 1.0
       }
     ],
-    "atuldriver": [
+    "atul driver": [
       {
         "chat_id": "917067766153@s.whatsapp.net",
         "jid": "917067766153@s.whatsapp.net",
@@ -10266,7 +10266,7 @@
         "score": 1.0
       }
     ],
-    "atul driver": [
+    "atuldriver": [
       {
         "chat_id": "917067766153@s.whatsapp.net",
         "jid": "917067766153@s.whatsapp.net",
@@ -10326,7 +10326,7 @@
         "score": 1.0
       }
     ],
-    "harshitbhaiyaindecampus": [
+    "harshit bhaiya indecampus": [
       {
         "chat_id": "919996663925@s.whatsapp.net",
         "jid": "919996663925@s.whatsapp.net",
@@ -10338,7 +10338,7 @@
         "score": 1.0
       }
     ],
-    "harshit bhaiya indecampus": [
+    "harshitbhaiyaindecampus": [
       {
         "chat_id": "919996663925@s.whatsapp.net",
         "jid": "919996663925@s.whatsapp.net",
@@ -10398,18 +10398,6 @@
         "score": 1.0
       }
     ],
-    "aishwaryasuyal": [
-      {
-        "chat_id": "919548418013@s.whatsapp.net",
-        "jid": "919548418013@s.whatsapp.net",
-        "chat_name": "Aishwarya suyal",
-        "display_name": "Aishwarya suyal",
-        "is_group": false,
-        "matched_on": "Aishwarya suyal",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "aishwarya suyal": [
       {
         "chat_id": "919548418013@s.whatsapp.net",
@@ -10422,14 +10410,14 @@
         "score": 1.0
       }
     ],
-    "autum cafe": [
+    "aishwaryasuyal": [
       {
-        "chat_id": "919634771469@s.whatsapp.net",
-        "jid": "919634771469@s.whatsapp.net",
-        "chat_name": "Autum Cafe",
-        "display_name": "Autum Cafe",
+        "chat_id": "919548418013@s.whatsapp.net",
+        "jid": "919548418013@s.whatsapp.net",
+        "chat_name": "Aishwarya suyal",
+        "display_name": "Aishwarya suyal",
         "is_group": false,
-        "matched_on": "Autum Cafe",
+        "matched_on": "Aishwarya suyal",
         "match_type": "name",
         "score": 1.0
       }
@@ -10446,7 +10434,19 @@
         "score": 1.0
       }
     ],
-    "himanshu sir gl": [
+    "autum cafe": [
+      {
+        "chat_id": "919634771469@s.whatsapp.net",
+        "jid": "919634771469@s.whatsapp.net",
+        "chat_name": "Autum Cafe",
+        "display_name": "Autum Cafe",
+        "is_group": false,
+        "matched_on": "Autum Cafe",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "himanshusirgl": [
       {
         "chat_id": "919910255874@s.whatsapp.net",
         "jid": "919910255874@s.whatsapp.net",
@@ -10458,7 +10458,7 @@
         "score": 1.0
       }
     ],
-    "himanshusirgl": [
+    "himanshu sir gl": [
       {
         "chat_id": "919910255874@s.whatsapp.net",
         "jid": "919910255874@s.whatsapp.net",
@@ -10542,7 +10542,7 @@
         "score": 1.0
       }
     ],
-    "appuchacha": [
+    "appu chacha": [
       {
         "chat_id": "919348173175@s.whatsapp.net",
         "jid": "919348173175@s.whatsapp.net",
@@ -10554,7 +10554,7 @@
         "score": 1.0
       }
     ],
-    "appu chacha": [
+    "appuchacha": [
       {
         "chat_id": "919348173175@s.whatsapp.net",
         "jid": "919348173175@s.whatsapp.net",
@@ -10578,7 +10578,7 @@
         "score": 1.0
       }
     ],
-    "munnashaikhairbnb": [
+    "munna shaikh airbnb": [
       {
         "chat_id": "919975316171@s.whatsapp.net",
         "jid": "919975316171@s.whatsapp.net",
@@ -10590,7 +10590,7 @@
         "score": 1.0
       }
     ],
-    "munna shaikh airbnb": [
+    "munnashaikhairbnb": [
       {
         "chat_id": "919975316171@s.whatsapp.net",
         "jid": "919975316171@s.whatsapp.net",
@@ -10626,7 +10626,7 @@
         "score": 1.0
       }
     ],
-    "trip coord": [
+    "tripcoord": [
       {
         "chat_id": "919342911756@s.whatsapp.net",
         "jid": "919342911756@s.whatsapp.net",
@@ -10638,7 +10638,7 @@
         "score": 1.0
       }
     ],
-    "tripcoord": [
+    "trip coord": [
       {
         "chat_id": "919342911756@s.whatsapp.net",
         "jid": "919342911756@s.whatsapp.net",
@@ -10686,7 +10686,7 @@
         "score": 1.0
       }
     ],
-    "anilgawa": [
+    "anil gawa": [
       {
         "chat_id": "919917631358@s.whatsapp.net",
         "jid": "919917631358@s.whatsapp.net",
@@ -10698,7 +10698,7 @@
         "score": 1.0
       }
     ],
-    "anil gawa": [
+    "anilgawa": [
       {
         "chat_id": "919917631358@s.whatsapp.net",
         "jid": "919917631358@s.whatsapp.net",
@@ -10758,18 +10758,6 @@
         "score": 1.0
       }
     ],
-    "meetb3ccvt": [
-      {
-        "chat_id": "919356561044@s.whatsapp.net",
-        "jid": "919356561044@s.whatsapp.net",
-        "chat_name": "Meet B-3 CCVT",
-        "display_name": "Meet B-3 CCVT",
-        "is_group": false,
-        "matched_on": "Meet B-3 CCVT",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "meet b 3 ccvt": [
       {
         "chat_id": "919356561044@s.whatsapp.net",
@@ -10782,14 +10770,14 @@
         "score": 1.0
       }
     ],
-    "prateek sir ac b4 b5 b6": [
+    "meetb3ccvt": [
       {
-        "chat_id": "919151404899@s.whatsapp.net",
-        "jid": "919151404899@s.whatsapp.net",
-        "chat_name": "Prateek Sir Ac(B4,B5,B6)",
-        "display_name": "Prateek Sir Ac(B4,B5,B6)",
+        "chat_id": "919356561044@s.whatsapp.net",
+        "jid": "919356561044@s.whatsapp.net",
+        "chat_name": "Meet B-3 CCVT",
+        "display_name": "Meet B-3 CCVT",
         "is_group": false,
-        "matched_on": "Prateek Sir Ac(B4,B5,B6)",
+        "matched_on": "Meet B-3 CCVT",
         "match_type": "name",
         "score": 1.0
       }
@@ -10806,7 +10794,19 @@
         "score": 1.0
       }
     ],
-    "bablu mama1": [
+    "prateek sir ac b4 b5 b6": [
+      {
+        "chat_id": "919151404899@s.whatsapp.net",
+        "jid": "919151404899@s.whatsapp.net",
+        "chat_name": "Prateek Sir Ac(B4,B5,B6)",
+        "display_name": "Prateek Sir Ac(B4,B5,B6)",
+        "is_group": false,
+        "matched_on": "Prateek Sir Ac(B4,B5,B6)",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "bablumama1": [
       {
         "chat_id": "919835630935@s.whatsapp.net",
         "jid": "919835630935@s.whatsapp.net",
@@ -10818,7 +10818,7 @@
         "score": 1.0
       }
     ],
-    "bablumama1": [
+    "bablu mama1": [
       {
         "chat_id": "919835630935@s.whatsapp.net",
         "jid": "919835630935@s.whatsapp.net",
@@ -10890,7 +10890,7 @@
         "score": 1.0
       }
     ],
-    "manishsehgal": [
+    "manish sehgal": [
       {
         "chat_id": "919015380148@s.whatsapp.net",
         "jid": "919015380148@s.whatsapp.net",
@@ -10902,7 +10902,7 @@
         "score": 1.0
       }
     ],
-    "manish sehgal": [
+    "manishsehgal": [
       {
         "chat_id": "919015380148@s.whatsapp.net",
         "jid": "919015380148@s.whatsapp.net",
@@ -10950,7 +10950,7 @@
         "score": 1.0
       }
     ],
-    "rahul upes": [
+    "rahulupes": [
       {
         "chat_id": "918302752657@s.whatsapp.net",
         "jid": "918302752657@s.whatsapp.net",
@@ -10962,7 +10962,7 @@
         "score": 1.0
       }
     ],
-    "rahulupes": [
+    "rahul upes": [
       {
         "chat_id": "918302752657@s.whatsapp.net",
         "jid": "918302752657@s.whatsapp.net",
@@ -10986,7 +10986,7 @@
         "score": 1.0
       }
     ],
-    "snackadda": [
+    "snack adda": [
       {
         "chat_id": "918585992216@s.whatsapp.net",
         "jid": "918585992216@s.whatsapp.net",
@@ -10998,7 +10998,7 @@
         "score": 1.0
       }
     ],
-    "snack adda": [
+    "snackadda": [
       {
         "chat_id": "918585992216@s.whatsapp.net",
         "jid": "918585992216@s.whatsapp.net",
@@ -11046,18 +11046,6 @@
         "score": 1.0
       }
     ],
-    "anil anuj": [
-      {
-        "chat_id": "919811233308@s.whatsapp.net",
-        "jid": "919811233308@s.whatsapp.net",
-        "chat_name": "Anil Anuj",
-        "display_name": "Anil Anuj",
-        "is_group": false,
-        "matched_on": "Anil Anuj",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "anilanuj": [
       {
         "chat_id": "919811233308@s.whatsapp.net",
@@ -11070,7 +11058,19 @@
         "score": 1.0
       }
     ],
-    "deep gorai upes b10": [
+    "anil anuj": [
+      {
+        "chat_id": "919811233308@s.whatsapp.net",
+        "jid": "919811233308@s.whatsapp.net",
+        "chat_name": "Anil Anuj",
+        "display_name": "Anil Anuj",
+        "is_group": false,
+        "matched_on": "Anil Anuj",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "deepgoraiupesb10": [
       {
         "chat_id": "918101738529@s.whatsapp.net",
         "jid": "918101738529@s.whatsapp.net",
@@ -11082,7 +11082,7 @@
         "score": 1.0
       }
     ],
-    "deepgoraiupesb10": [
+    "deep gorai upes b10": [
       {
         "chat_id": "918101738529@s.whatsapp.net",
         "jid": "918101738529@s.whatsapp.net",
@@ -11154,7 +11154,7 @@
         "score": 1.0
       }
     ],
-    "riyasaxena": [
+    "riya saxena": [
       {
         "chat_id": "918287557968@s.whatsapp.net",
         "jid": "918287557968@s.whatsapp.net",
@@ -11166,7 +11166,7 @@
         "score": 1.0
       }
     ],
-    "riya saxena": [
+    "riyasaxena": [
       {
         "chat_id": "918287557968@s.whatsapp.net",
         "jid": "918287557968@s.whatsapp.net",
@@ -11214,18 +11214,6 @@
         "score": 1.0
       }
     ],
-    "aditya parihar": [
-      {
-        "chat_id": "919696328267@s.whatsapp.net",
-        "jid": "919696328267@s.whatsapp.net",
-        "chat_name": "Aditya Parihar",
-        "display_name": "Aditya Parihar",
-        "is_group": false,
-        "matched_on": "Aditya Parihar",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "adityaparihar": [
       {
         "chat_id": "919696328267@s.whatsapp.net",
@@ -11238,7 +11226,19 @@
         "score": 1.0
       }
     ],
-    "tandoorihut": [
+    "aditya parihar": [
+      {
+        "chat_id": "919696328267@s.whatsapp.net",
+        "jid": "919696328267@s.whatsapp.net",
+        "chat_name": "Aditya Parihar",
+        "display_name": "Aditya Parihar",
+        "is_group": false,
+        "matched_on": "Aditya Parihar",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "tandoori hut": [
       {
         "chat_id": "919891110023@s.whatsapp.net",
         "jid": "919891110023@s.whatsapp.net",
@@ -11250,7 +11250,7 @@
         "score": 1.0
       }
     ],
-    "tandoori hut": [
+    "tandoorihut": [
       {
         "chat_id": "919891110023@s.whatsapp.net",
         "jid": "919891110023@s.whatsapp.net",
@@ -11382,7 +11382,7 @@
         "score": 1.0
       }
     ],
-    "aayushtrainer": [
+    "aayush trainer": [
       {
         "chat_id": "917065381765@s.whatsapp.net",
         "jid": "917065381765@s.whatsapp.net",
@@ -11394,7 +11394,7 @@
         "score": 1.0
       }
     ],
-    "aayush trainer": [
+    "aayushtrainer": [
       {
         "chat_id": "917065381765@s.whatsapp.net",
         "jid": "917065381765@s.whatsapp.net",
@@ -11430,18 +11430,6 @@
         "score": 1.0
       }
     ],
-    "avneeshinox": [
-      {
-        "chat_id": "919958435382@s.whatsapp.net",
-        "jid": "919958435382@s.whatsapp.net",
-        "chat_name": "Avneesh Inox",
-        "display_name": "Avneesh Inox",
-        "is_group": false,
-        "matched_on": "Avneesh Inox",
-        "match_type": "name",
-        "score": 1.0
-      }
-    ],
     "avneesh inox": [
       {
         "chat_id": "919958435382@s.whatsapp.net",
@@ -11454,14 +11442,14 @@
         "score": 1.0
       }
     ],
-    "arunjidriverindecampus": [
+    "avneeshinox": [
       {
-        "chat_id": "919927850236@s.whatsapp.net",
-        "jid": "919927850236@s.whatsapp.net",
-        "chat_name": "Arun Ji Driver IndeCampus",
-        "display_name": "Arun Ji Driver IndeCampus",
+        "chat_id": "919958435382@s.whatsapp.net",
+        "jid": "919958435382@s.whatsapp.net",
+        "chat_name": "Avneesh Inox",
+        "display_name": "Avneesh Inox",
         "is_group": false,
-        "matched_on": "Arun Ji Driver IndeCampus",
+        "matched_on": "Avneesh Inox",
         "match_type": "name",
         "score": 1.0
       }
@@ -11478,7 +11466,19 @@
         "score": 1.0
       }
     ],
-    "ravipuriplumber": [
+    "arunjidriverindecampus": [
+      {
+        "chat_id": "919927850236@s.whatsapp.net",
+        "jid": "919927850236@s.whatsapp.net",
+        "chat_name": "Arun Ji Driver IndeCampus",
+        "display_name": "Arun Ji Driver IndeCampus",
+        "is_group": false,
+        "matched_on": "Arun Ji Driver IndeCampus",
+        "match_type": "name",
+        "score": 1.0
+      }
+    ],
+    "ravi puri plumber": [
       {
         "chat_id": "917042995464@s.whatsapp.net",
         "jid": "917042995464@s.whatsapp.net",
@@ -11490,7 +11490,7 @@
         "score": 1.0
       }
     ],
-    "ravi puri plumber": [
+    "ravipuriplumber": [
       {
         "chat_id": "917042995464@s.whatsapp.net",
         "jid": "917042995464@s.whatsapp.net",
@@ -11538,7 +11538,7 @@
         "score": 1.0
       }
     ],
-    "ps4repair": [
+    "ps4 repair": [
       {
         "chat_id": "919560850950@s.whatsapp.net",
         "jid": "919560850950@s.whatsapp.net",
@@ -11550,7 +11550,7 @@
         "score": 1.0
       }
     ],
-    "ps4 repair": [
+    "ps4repair": [
       {
         "chat_id": "919560850950@s.whatsapp.net",
         "jid": "919560850950@s.whatsapp.net",
@@ -11586,7 +11586,7 @@
         "score": 1.0
       }
     ],
-    "917683031290": [
+    "91 76830 31290": [
       {
         "chat_id": "917683031290@s.whatsapp.net",
         "jid": "917683031290@s.whatsapp.net",
@@ -11598,7 +11598,7 @@
         "score": 1.0
       }
     ],
-    "91 76830 31290": [
+    "917683031290": [
       {
         "chat_id": "917683031290@s.whatsapp.net",
         "jid": "917683031290@s.whatsapp.net",

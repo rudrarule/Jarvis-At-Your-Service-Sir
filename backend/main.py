@@ -15,7 +15,7 @@ from fastapi.responses import Response, PlainTextResponse, StreamingResponse
 
 from models.chat_model import ChatRequest, ChatResponse, TTSRequest, MusicRequest, AppRequest
 from models.overlay_model import OverlayFollowUpRequest
-from services.llm_service import generate_response
+from services.llm_service import generate_response, _fix_markdown
 from services.memory_service import get_all_memories, clear_all_memories
 from services import text_to_speech_service
 from services.overlay_context_service import (
@@ -58,6 +58,25 @@ from services import whatsapp_baileys_service as wa_baileys
 async def lifespan(app: FastAPI):
     """Warm local subsystems while keeping startup responsive."""
     asyncio.create_task(text_to_speech_service.warm_start())
+
+    # ── MCP tools (flag-gated by JARVIS_MCP, fail-open) ──
+    # Load on the running loop, merge into ALL_TOOLS, and rebuild the ReAct graph so
+    # its ToolNode can execute the new tools. Any failure leaves the agent unchanged.
+    try:
+        from services.mcp_client import load_mcp_tools, mcp_enabled
+
+        if mcp_enabled():
+            mcp_tools = await load_mcp_tools()
+            if mcp_tools:
+                import workflows.tool_wrapper as tw
+                import workflows.master_graph as mg
+
+                tw.ALL_TOOLS.extend(mcp_tools)               # guard reads ALL_TOOLS live
+                mg.master_graph_app = mg.build_master_graph()  # rebuild ToolNode w/ MCP tools
+                print(f"[MCP] Agent rebuilt with {len(tw.ALL_TOOLS)} total tools.")
+    except Exception as exc:
+        print(f"[MCP] Integration skipped (fail-open): {exc}")
+
     await emit_dashboard_event(
         "system.startup",
         {"service": "Holo Core Nexus API", "version": "0.3.0"},
@@ -193,6 +212,10 @@ async def chat(request: ChatRequest):
         )
         reset_current_mission_id(mission_token)
         raise
+
+    # Single chokepoint: normalize every chat reply into well-formed markdown
+    # so the frontend renders bullets/headers instead of a raw-asterisk wall.
+    reply = _fix_markdown(reply)
 
     elapsed_ms = round((time.perf_counter() - started) * 1000)
     completed = complete_mission(mission_id, reply, elapsed_ms)

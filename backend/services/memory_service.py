@@ -52,12 +52,16 @@ def is_important_message(message: str) -> bool:
     return any(re.search(p, text) for p in _IMPORTANT_PATTERNS)
 
 
-async def store_memory(text: str) -> bool:
+async def store_memory(text: str, force: bool = False) -> bool:
     """
     Store a message in ChromaDB if it's important and not a duplicate.
     Returns True if stored, False if skipped.
+
+    force=True skips the regex importance gate (used by the explicit `remember`
+    MCP tool, where the agent's decision to call it IS the importance signal).
+    Dedup and eviction still apply.
     """
-    if not is_important_message(text):
+    if not force and not is_important_message(text):
         return False
 
     try:

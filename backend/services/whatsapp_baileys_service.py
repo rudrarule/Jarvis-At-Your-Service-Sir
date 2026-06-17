@@ -149,6 +149,51 @@ async def send_whatsapp_message(chat_id: str, text: str) -> dict:
         return {"success": False, "error": f"Send failed: {e}"}
 
 
+# ── Chat Messages (single chat buffer) ───────────────────
+
+async def get_chat_messages(chat_id: str) -> dict:
+    """
+    Fetch the retained message buffer for a single chat from the connector.
+
+    Args:
+        chat_id: The chat JID (e.g., "12345-67890@g.us" or "9198...@s.whatsapp.net")
+
+    Returns:
+        {
+            "chat_id": str,
+            "chat_name": str,
+            "is_group": bool,
+            "messages": [
+                {"id": str, "text": str, "timestamp": int, "sender": str, "from_me": bool}
+            ]
+        }
+    """
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp = await client.get(
+                f"{CONNECTOR_URL}/chat-messages",
+                params={"chat_id": chat_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.ConnectError:
+        return {
+            "chat_id": chat_id,
+            "chat_name": chat_id,
+            "is_group": chat_id.endswith("@g.us"),
+            "messages": [],
+            "error": "WhatsApp connector is not running",
+        }
+    except Exception as e:
+        return {
+            "chat_id": chat_id,
+            "chat_name": chat_id,
+            "is_group": chat_id.endswith("@g.us"),
+            "messages": [],
+            "error": f"Failed to fetch chat messages: {e}",
+        }
+
+
 # ── Search Contacts / Chats ──────────────────────────────
 
 async def search_chats(query: str) -> dict:

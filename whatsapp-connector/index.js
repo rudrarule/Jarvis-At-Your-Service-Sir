@@ -26,7 +26,7 @@ const pino = require("pino");
 
 const config = require("./src/config");
 const { getAuthState, clearAuthState } = require("./src/auth");
-const { registerEvents } = require("./src/events");
+const { registerEvents, startUnansweredSweeper } = require("./src/events");
 const { createApi } = require("./src/api");
 const { initDb, purgeExpired, closeDb } = require("./src/db");
 const store = require("./src/store");
@@ -133,8 +133,13 @@ const server = api.listen(config.port, () => {
   console.log(`[API]   GET  /connection`);
   console.log(`[API]   POST /clear-unread`);
   console.log(`[API]   POST /clear-calls`);
+  console.log(`[API]   GET  /chat-messages`);
+  console.log(`[API]   GET  /pending-replies`);
   console.log(`[API]   GET  /auto-replies\n`);
 });
+
+// ── Delayed auto-responder for unanswered personal chats ──
+startUnansweredSweeper(() => sock);
 
 // ── Graceful Shutdown ───────────────────────────────────
 function shutdown(signal) {

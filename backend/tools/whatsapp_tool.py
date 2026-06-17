@@ -64,3 +64,15 @@ async def whatsapp_send(contact: str, message: str) -> str:
         return f"Message sent to {contact}, sir."
     else:
         return f"Failed to send message, sir. {result.get('error', 'Unknown error')}"
+
+
+async def whatsapp_summarize_group(group_name: str = "") -> str:
+    """Summarize recent activity in a WhatsApp group (e.g. the family group)."""
+    from services.whatsapp_intelligence import summarize_group
+    return await summarize_group(group_name or None)
+
+
+async def whatsapp_action_items() -> str:
+    """Show only the unread WhatsApp messages that require a reply or action."""
+    from services.whatsapp_intelligence import action_items
+    return await action_items()

@@ -58,6 +58,28 @@ function createApi(getSocket) {
     });
   });
 
+  // ── Chat Messages (single chat buffer) ─────────────────
+  // Returns the retained message buffer for one chat. Used by the backend
+  // for group summaries and action-item extraction.
+  app.get("/chat-messages", (req, res) => {
+    const chatId = req.query.chat_id;
+    if (!chatId) {
+      return res.status(400).json({
+        error: "Missing required query parameter: chat_id",
+      });
+    }
+    res.json(store.getChatMessages(chatId));
+  });
+
+  // ── Pending Replies (auto-responder visibility) ────────
+  app.get("/pending-replies", (req, res) => {
+    const thresholdMs = req.query.threshold_ms
+      ? parseInt(req.query.threshold_ms, 10)
+      : 0;
+    const pending = store.getPendingPersonalReplies(thresholdMs);
+    res.json({ count: pending.length, pending });
+  });
+
   // ── Missed Calls ────────────────────────────────────────
   app.get("/missed-calls", (req, res) => {
     const since = req.query.since ? parseInt(req.query.since, 10) : undefined;
